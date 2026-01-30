@@ -17,6 +17,7 @@ Skills are auto-discovered from `.claude/skills/`. Use them for consistent state
 - **`ralph-get-feature-stats`** - Get project stats overview (script: `.claude/skills/ralph/get-feature-stats/get-feature-stats.sh`)
 
 ### Utility Skills (`.claude/skills/`)
+- **`test-driven-development`** - TDD Red-Green-Refactor enforcement (read `.claude/skills/test-driven-development/SKILL.md` — **follow this for all feature implementations**)
 - **`docs-lookup`** - API verification guidelines (read `.claude/skills/docs-lookup/SKILL.md` when using unfamiliar APIs)
 - **`nuget-manager`** - Safe NuGet package management (read `.claude/skills/nuget-manager/SKILL.md` for .NET projects)
 
@@ -157,11 +158,13 @@ Before writing code, note:
 
 ## STEP 4: IMPLEMENT
 
-Work on ONE feature only:
+Work on ONE feature only, following the **TDD Red-Green-Refactor cycle** (read `.claude/skills/test-driven-development/SKILL.md`):
 1. **Search for existing patterns first**
-2. Write the code following those patterns
-3. Make it compile/build
-4. Write tests if needed
+2. **RED**: Write a failing test for the next behavior
+3. **VERIFY RED**: Run the test — confirm it fails for the right reason
+4. **GREEN**: Write the simplest code to make the test pass
+5. **VERIFY GREEN**: Run all tests — confirm everything passes
+6. **REPEAT** for each behavior in the acceptance criteria
 
 ### Implementation Strategy for Large Codebases
 

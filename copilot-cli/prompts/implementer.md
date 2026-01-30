@@ -17,6 +17,7 @@ The framework provides modular skills in `skills/`. Use them for consistent stat
 - **`get-feature-stats`** - Get project stats overview (script: `skills/ralph/get-feature-stats/get-feature-stats.ps1`)
 
 ### Utility Skills (`skills/`)
+- **`test-driven-development/SKILL.md`** - TDD Red-Green-Refactor enforcement (read this — **follow this for all feature implementations**)
 - **`docs-lookup/SKILL.md`** - API verification guidelines (read when using unfamiliar APIs)
 - **`nuget-manager/SKILL.md`** - Safe NuGet package management (read for .NET projects)
 
@@ -157,11 +158,13 @@ Before writing code, note:
 
 ## STEP 4: IMPLEMENT
 
-Work on ONE feature only:
+Work on ONE feature only, following the **TDD Red-Green-Refactor cycle** (read `skills/test-driven-development/SKILL.md`):
 1. **Search for existing patterns first**
-2. Write the code following those patterns
-3. Make it compile/build
-4. Write tests if needed
+2. **RED**: Write a failing test for the next behavior
+3. **VERIFY RED**: Run the test — confirm it fails for the right reason
+4. **GREEN**: Write the simplest code to make the test pass
+5. **VERIFY GREEN**: Run all tests — confirm everything passes
+6. **REPEAT** for each behavior in the acceptance criteria
 
 ### Implementation Strategy for Large Codebases
 

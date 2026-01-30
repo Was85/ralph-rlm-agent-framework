@@ -12,6 +12,19 @@ Interactively help users write comprehensive Product Requirements Documents (PRD
 
 ## Workflow
 
+### Questioning Strategy
+
+Ask questions in focused rounds of 3-5 questions. Present numbered options with lettered choices for rapid iteration:
+
+```
+1. What type of project?
+   A) Greenfield (new project)
+   B) Brownfield (adding to existing code)
+   C) Bug fix / patch
+```
+
+Users respond with shorthand like "1A, 2C" for speed. Conduct 2-4 rounds of adaptive follow-up before generating the PRD. Don't over-specify or under-specify -- adapt based on answers.
+
 ### Phase 1: Project Understanding (MANDATORY)
 
 Before writing anything, ask the user:
@@ -49,16 +62,26 @@ For each feature area, ask about:
 
 Use clear requirement keywords: **must**, **shall**, **will**, **should**.
 
-### Phase 3: Test Requirements (MANDATORY)
+### Phase 3: Quality Gates (MANDATORY)
+
+**Always ask about quality gate commands** -- these are the commands that EVERY feature must pass. They become the `verification_steps` in feature_list.json.
+
+Ask:
+- "What is the **build command**?" (e.g., `dotnet build`, `npm run build`, `go build ./...`)
+- "What is the **test command**?" (e.g., `dotnet test`, `npm test`, `pytest`)
+- "Any **linting or type-checking** commands?" (e.g., `npm run lint`, `dotnet format --verify-no-changes`)
+- "Any **other verification** needed?" (e.g., `npm run typecheck`, `cargo clippy`)
+
+Include these in a dedicated **Quality Gates** section in the PRD. The Initializer will embed them into every feature's `verification_steps`.
+
+### Phase 4: Test Requirements (MANDATORY)
 
 Every PRD must specify what needs testing:
 - **Unit Tests**: Business logic, data validation, service methods, utility functions
 - **Integration Tests**: API endpoints, database operations, service interactions
 - **E2E Tests** (if applicable): UI workflows, user journeys, form submissions
 
-Ask: "What is the test command?" (e.g., `dotnet test`, `npm test`, `pytest`)
-
-### Phase 4: Dependency Analysis
+### Phase 5: Dependency Analysis
 
 Determine the order features should be implemented:
 - What entities/models need to exist first?
@@ -93,6 +116,27 @@ If a requirement would touch more than **4 files** or involve more than **2 conc
 
 ---
 
+## Machine-Verifiable Criteria
+
+**Every requirement and acceptance criterion must be machine-verifiable.** The Implementer agent needs to determine pass/fail without human judgment.
+
+### Bad (Vague)
+- "Works correctly"
+- "Handles errors properly"
+- "Is performant"
+- "User-friendly interface"
+
+### Good (Machine-Verifiable)
+- "Returns HTTP 200 with JSON body containing `token` field"
+- "Returns HTTP 400 with error message when email is empty"
+- "Responds within 200ms for 95th percentile requests"
+- "Button displays confirmation dialog before executing delete"
+
+### Rule of Thumb
+If an AI agent can't write a test for it, it's too vague. Rewrite until a test can assert it.
+
+---
+
 ## PRD Output Format
 
 Generate the PRD following the framework's template structure:
@@ -109,6 +153,12 @@ Generate the PRD following the framework's template structure:
 ## Goals
 1. [Goal 1]
 2. [Goal 2]
+
+## Quality Gates
+<!-- Commands that EVERY feature must pass -->
+- Build: `[build command]`
+- Test: `[test command]`
+- Lint: `[lint command]` (if applicable)
 
 ## Functional Requirements
 
@@ -145,7 +195,7 @@ Generate the PRD following the framework's template structure:
 - [What we are NOT building]
 
 ## Acceptance Criteria
-- [ ] [Specific, testable criterion]
+- [ ] [Specific, machine-verifiable criterion]
 ```
 
 ---
@@ -154,11 +204,13 @@ Generate the PRD following the framework's template structure:
 
 Before handing off the PRD:
 
+- [ ] **Quality Gates**: Build and test commands are specified in a dedicated section
+- [ ] **Machine-Verifiable**: Every criterion can be asserted by a test (no vague terms)
 - [ ] **Completeness**: Every feature area has explicit acceptance criteria
 - [ ] **Testability**: All logic has corresponding test requirements
 - [ ] **Sizing**: No requirement would produce a feature touching 4+ files
 - [ ] **Ordering**: Dependencies are clear (models before services, services before controllers)
-- [ ] **Clarity**: Requirements use specific names, types, and values (no vague terms)
+- [ ] **Clarity**: Requirements use specific names, types, and values
 - [ ] **Error Handling**: Every happy path has a corresponding error scenario
 - [ ] **NFRs**: Performance, security, and logging requirements are included
 - [ ] **Keywords**: Requirements use "must", "shall", "will", "should"

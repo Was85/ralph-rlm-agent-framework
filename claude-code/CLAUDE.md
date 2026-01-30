@@ -65,6 +65,7 @@ project/
 │   │   │   ├── get-feature-stats/
 │   │   │   ├── prd-author/        # User-invocable as /prd-author
 │   │   │   └── validate-prd/
+│   │   ├── test-driven-development/  # TDD Red-Green-Refactor
 │   │   ├── docs-lookup/
 │   │   ├── nuget-manager/
 │   │   └── get-branch-name/
@@ -124,6 +125,7 @@ These are used internally by the framework agents during the init/validate/imple
 - **prd-author** (`/prd-author`) — Interactive PRD authoring assistant. Guides you through creating a structured `prd.md` from your project idea.
 
 ### Utility Skills
+- **test-driven-development** — TDD Red-Green-Refactor enforcement (used by Implementer agent for all feature implementations)
 - **validate-prd** — PRD quality checklist for the Validator agent
 - **docs-lookup** — API verification guidelines (use when working with unfamiliar APIs)
 - **nuget-manager** — Safe NuGet package management for .NET projects

@@ -87,6 +87,7 @@ Ralph uses modular **skills** — self-contained units of functionality with doc
 │   ├── get-feature-stats/          # Get project stats
 │   ├── prd-author/                 # Interactive PRD creation (/prd-author)
 │   └── validate-prd/               # PRD quality checklist
+├── test-driven-development/        # TDD Red-Green-Refactor enforcement
 ├── get-branch-name/                # Utility: git branch naming
 ├── nuget-manager/                  # Utility: safe NuGet management
 └── docs-lookup/                    # Utility: API verification
@@ -96,6 +97,7 @@ Ralph uses modular **skills** — self-contained units of functionality with doc
 ```
 skills/
 ├── ralph/                          # Core loop skills (same structure)
+├── test-driven-development/        # TDD Red-Green-Refactor enforcement
 ├── get-branch-name/
 ├── nuget-manager/
 └── docs-lookup/
