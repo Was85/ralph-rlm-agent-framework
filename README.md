@@ -14,18 +14,18 @@ Ralph is an **autonomous coding loop** that takes your requirements and builds w
 
 ## Key Features
 
-### 📋 PRD-Driven Development
+### PRD-Driven Development
 Everything starts with a **`prd.md`** file in your project root. This is your Product Requirements Document — write what you want built, and Ralph figures out how to build it.
 
 ```
 your-project/
-├── prd.md               ← YOU WRITE THIS (your requirements)
+├── prd.md               ← YOU WRITE THIS (or use ./ralph.sh author)
 ├── feature_list.json    ← Ralph creates this
 ├── validation-state.json
 └── ... your code
 ```
 
-### 🔍 RLM: Large Codebase Support (NEW!)
+### RLM: Large Codebase Support
 
 Ralph now uses **RLM-style exploration** for large codebases. Instead of trying to read everything at once (which hits context limits), the AI:
 
@@ -43,7 +43,7 @@ RLM approach (works at any scale):
   AI searches for "auth" → Finds AuthController.cs → Reads that file → Follows pattern
 ```
 
-### ✅ Validation Loop
+### Validation Loop
 Before writing any code, Ralph **validates** that your requirements are fully covered:
 
 ```
@@ -65,13 +65,105 @@ The validation phase ensures:
 - No requirements are missed or forgotten
 - Coverage must reach 95%+ before implementation begins
 
-### 🔄 Three-Phase Architecture
+### Three-Phase Architecture
 
 | Phase | What Happens | Loops? |
 |-------|--------------|--------|
 | **1. Init** | Explores codebase, analyzes PRD, creates `feature_list.json` | Once |
 | **2. Validate** | Searches for existing code, ensures 95%+ PRD coverage | Yes, until covered |
 | **3. Implement** | Finds patterns with grep, builds features one by one | Yes, until complete |
+
+### Skill-Based Architecture
+
+Ralph uses modular **skills** — self-contained units of functionality with documentation and companion scripts. Each edition has skills in its native location:
+
+**Claude Code** (`.claude/skills/` — auto-discovered):
+```
+.claude/skills/
+├── ralph/                          # Core loop skills
+│   ├── get-next-feature/           # Find next feature to implement
+│   ├── update-feature-status/      # Change feature status
+│   ├── increment-feature-attempts/ # Track failed attempts
+│   ├── get-feature-stats/          # Get project stats
+│   ├── prd-author/                 # Interactive PRD creation (/prd-author)
+│   └── validate-prd/               # PRD quality checklist
+├── get-branch-name/                # Utility: git branch naming
+├── nuget-manager/                  # Utility: safe NuGet management
+└── docs-lookup/                    # Utility: API verification
+```
+
+**Copilot CLI** (`skills/` — referenced by prompts):
+```
+skills/
+├── ralph/                          # Core loop skills (same structure)
+├── get-branch-name/
+├── nuget-manager/
+└── docs-lookup/
+```
+
+Each skill has a `SKILL.md` documenting its purpose, inputs, outputs, and rules. Claude Code skills include `.sh` companion scripts; Copilot CLI skills include `.ps1` scripts.
+
+### Domain-Specific Coding Rules
+
+Each edition uses its AI tool's native mechanism for auto-loading coding standards based on file patterns:
+
+**Claude Code** (`.claude/rules/` — auto-loaded by path pattern):
+```
+.claude/rules/
+├── csharp.md                       # C# standards (applies to **/*.cs)
+├── playwright-dotnet.md            # Playwright .NET (applies to **/*Tests.cs)
+└── TEMPLATE.md                     # Template for adding your own
+```
+
+**Copilot CLI** (`.github/instructions/` — auto-loaded by `applyTo:` pattern):
+```
+.github/instructions/
+├── csharp.instructions.md
+├── playwright-dotnet.instructions.md
+└── TEMPLATE.instructions.md
+```
+
+Rules/instructions are automatically active when the AI works with matching file types. Add your own for any tech stack by copying the template.
+
+### PRD Author Assistant
+
+Don't know where to start? Run the PRD Author:
+
+```bash
+./ralph.sh author        # Bash
+.\ralph.ps1 author       # PowerShell
+```
+
+The author skill guides you through creating a comprehensive PRD with:
+- Project understanding (greenfield/brownfield/bugfix)
+- Requirements deep dive (happy paths, edge cases, error handling)
+- Test requirements (unit, integration, E2E)
+- Dependency analysis and feature sizing
+
+Philosophy: *"Ask 5 questions upfront rather than have Ralph fail 5 iterations."*
+
+### Structured Knowledge Transfer
+
+The progress file includes a **Codebase Patterns** section at the top — a living document of reusable patterns and learnings discovered during implementation. Each iteration reads this section first, ensuring consistency across the entire project.
+
+### Structured Feature Decomposition
+
+The Initializer uses a systematic methodology to convert your PRD into atomic features:
+
+1. **Categorize** every requirement (functional, data/model, error handling, integration, non-functional, UI/UX)
+2. **Decompose** along 4 axes: by entity, by operation, by path (happy/error/edge), by layer
+3. **Enforce test criteria** — every feature must include "Build passes" + at least one test criterion
+4. **Trace to source** — every feature links back to its PRD section via `source_requirement`
+5. **Self-validate** — 8-point checklist before output (coverage, sizing, ordering, no duplicates, etc.)
+
+### Feature Sizing Discipline
+
+Ralph enforces right-sized features:
+- Each feature must be completable in **one iteration** (one context window)
+- Each feature should touch **2-4 files max**
+- If you can't explain it in **2-3 sentences**, it's too big
+- Features are ordered by `priority` with explicit `depends_on` for dependency chains
+- The Validator automatically flags oversized features for splitting
 
 ## Two Editions
 
@@ -106,6 +198,14 @@ Set-Location your-project
 > ```
 
 ### 2. Write your requirements in `prd.md`
+
+**Option A:** Use the interactive author for guided PRD creation:
+```bash
+./ralph.sh author        # Bash
+.\ralph.ps1 author       # PowerShell
+```
+
+**Option B:** Write manually using the template:
 
 ```markdown
 # Product Requirements Document
@@ -156,6 +256,7 @@ Ralph will:
 
 | Command | Description |
 |---------|-------------|
+| `author` | Interactive PRD creation assistant |
 | `auto` | Run all phases automatically |
 | `init` | Phase 1: Create features from PRD |
 | `validate` | Phase 2: Validate PRD coverage |
@@ -190,7 +291,17 @@ Each iteration:
 Ralph maintains state in several files:
 - `feature_list.json` — All features with status (pending/in_progress/complete/blocked)
 - `validation-state.json` — PRD coverage percentage and gaps
-- `claude-progress.txt` / `copilot-progress.txt` — Detailed iteration log
+- `claude-progress.txt` / `copilot-progress.txt` — Detailed iteration log with Codebase Patterns section
+
+### Data-Driven Completion
+
+Completion is detected by querying `feature_list.json` directly — no magic strings or signal files:
+- **All features complete** (none pending/in_progress/blocked) → Loop exits successfully
+- **Some blocked, none pending** → Loop exits, human intervention needed
+- **Still pending/in_progress** → Loop continues to next iteration
+- **Max iterations reached** → Loop exits, check feature_list.json for progress
+
+Because completion is derived from the data, you can **add new features at any time** — just add entries to `feature_list.json` with `"status": "pending"` and re-run.
 
 ### Safety Features
 
@@ -274,9 +385,31 @@ MAX_IMPLEMENT_ITERATIONS=100 COVERAGE_THRESHOLD=90 ./ralph.sh auto
 |------|-------------|
 | `feature_list.json` | All features extracted from PRD with status tracking |
 | `validation-state.json` | PRD coverage percentage and identified gaps |
-| `claude-progress.txt` | Detailed iteration log (Claude Code edition) |
-| `copilot-progress.txt` | Detailed iteration log (Copilot CLI edition) |
+| `claude-progress.txt` | Detailed iteration log with Codebase Patterns section (Claude Code edition) |
+| `copilot-progress.txt` | Detailed iteration log with Codebase Patterns section (Copilot CLI edition) |
 | `ralph-debug.log` | Debug log when running in verbose mode |
+
+### Framework Directories
+
+Each edition is self-contained with its own skills and coding rules in native locations:
+
+**Claude Code Edition:**
+
+| Directory | Description |
+|-----------|-------------|
+| `.claude/skills/ralph/` | Core Ralph loop skills (get-next-feature, update-feature-status, etc.) |
+| `.claude/skills/` | General utility skills (get-branch-name, nuget-manager, docs-lookup) |
+| `.claude/rules/` | Auto-loaded coding standards (by file path pattern) |
+| `prompts/` | Agent prompt files (initializer, validator, implementer) |
+
+**Copilot CLI Edition:**
+
+| Directory | Description |
+|-----------|-------------|
+| `skills/ralph/` | Core Ralph loop skills (get-next-feature, update-feature-status, etc.) |
+| `skills/` | General utility skills (get-branch-name, nuget-manager, docs-lookup) |
+| `.github/instructions/` | Auto-loaded coding instructions (by `applyTo:` pattern) |
+| `prompts/` | Agent prompt files (initializer, validator, implementer) |
 
 ### Feature Statuses
 
@@ -380,11 +513,17 @@ A Slack bot for pharmacy inventory management demonstrating:
 {
   "id": "F003",
   "description": "Inventory query from pharmacy API",
+  "priority": 3,
+  "depends_on": ["F001", "F002"],
+  "source_requirement": "## Functional Requirements > Inventory Queries",
   "acceptance_criteria": [
     "Can query inventory API with medication name",
     "Returns stock count and location",
-    "Handles API timeouts with retry"
+    "Handles API timeouts with retry",
+    "Unit test: InventoryServiceTests.Query_ValidName_ReturnsStock verifies behavior",
+    "Build passes (npm test)"
   ],
+  "verification_steps": ["npm run build", "npm test"],
   "status": "pending"
 }
 ```
@@ -399,11 +538,14 @@ cd ../my-test-project
 
 ## Tips for Better Results
 
-1. **Be specific in your PRD** — More detail = better features
-2. **Include error cases** — "When X fails, show Y message"
-3. **Specify tech stack** — "Use Express, not Fastify"
-4. **Define acceptance criteria** — "Users can see a success message after..."
-5. **Check `status` often** — See what's complete vs blocked
+1. **Use `./ralph.sh author`** — Let the PRD Author guide you through writing requirements
+2. **Be specific in your PRD** — More detail = better features
+3. **Include error cases** — "When X fails, show Y message"
+4. **Specify tech stack** — "Use Express, not Fastify"
+5. **Right-size requirements** — Each should map to 2-4 files max
+6. **Add coding rules** — Copy the TEMPLATE and customize for your stack (`.claude/rules/` or `.github/instructions/`)
+7. **Check `status` often** — See what's complete vs blocked
+8. **Add features mid-project** — Add new entries to `feature_list.json` with `"status": "pending"` and re-run
 
 ## Credits
 

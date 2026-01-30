@@ -24,7 +24,7 @@
 
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('init', 'validate', 'run', 'implement', 'auto', 'status', 'help')]
+    [ValidateSet('author', 'init', 'validate', 'run', 'implement', 'auto', 'status', 'help')]
     [string]$Command = 'help',
 
     [Alias('m')]
@@ -47,7 +47,7 @@ param(
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $PromptsDir = Join-Path $ScriptDir "prompts"
-$TemplatesDir = Join-Path $ScriptDir "templates"
+$SkillsDir = Join-Path $ScriptDir "skills"
 
 # ══════════════════════════════════════════════════════════════
 # Configuration
@@ -104,6 +104,7 @@ function Show-Help {
     Write-Host ""
     
     Write-Host "COMMANDS" -ForegroundColor White
+    Write-Host "  author      Interactive PRD creation assistant"
     Write-Host "  init        Phase 1: Analyze PRD and create feature_list.json"
     Write-Host "  validate    Phase 2: Validate all PRD requirements are covered (loops)"
     Write-Host "  run         Phase 3: Implement features one by one (loops)"
@@ -135,18 +136,26 @@ function Show-Help {
     Write-Host ""
     
     Write-Host "QUICK START" -ForegroundColor White
-    Write-Host "  1. Write your requirements in prd.md"
-    Write-Host "  2. Run: .\ralph.ps1 auto"
-    Write-Host "  3. Go make coffee ☕"
+    Write-Host "  1. Run: .\ralph.ps1 author    (get help writing your PRD)"
+    Write-Host "  2. Write your requirements in prd.md"
+    Write-Host "  3. Run: .\ralph.ps1 auto"
+    Write-Host "  4. Go make coffee"
     Write-Host ""
     
     Write-Host "EXAMPLES" -ForegroundColor White
+    Write-Host "  .\ralph.ps1 author                        # Get help writing your PRD"
     Write-Host "  .\ralph.ps1 auto                          # Run everything"
     Write-Host "  .\ralph.ps1 init                          # Just create features"
     Write-Host "  .\ralph.ps1 run -m 100                    # Run with max 100 iterations"
     Write-Host "  .\ralph.ps1 run -AllowAllTools            # Fully autonomous (less safe)"
     Write-Host ""
-    
+
+    Write-Host "FRAMEWORK DIRECTORIES" -ForegroundColor White
+    Write-Host "  skills\               Modular skill definitions and scripts"
+    Write-Host "  skills\ralph\         Core Ralph loop skills"
+    Write-Host "  .github\instructions\ Auto-loaded coding instructions (by file pattern)"
+    Write-Host ""
+
     Write-Host "LEARN MORE" -ForegroundColor White
     Write-Host "  Original technique: https://ghuntley.com/ralph/"
     Write-Host "  Copilot CLI docs:   https://docs.github.com/en/copilot/concepts/agents/about-copilot-cli"
@@ -292,6 +301,70 @@ function Invoke-Copilot {
     }
     
     return $LASTEXITCODE
+}
+
+# ══════════════════════════════════════════════════════════════
+# PRD Author (Interactive)
+# ══════════════════════════════════════════════════════════════
+
+function Start-Author {
+    Write-Phase "PRD AUTHOR"
+    Write-Host "Interactive PRD creation assistant..."
+    Write-Host ""
+
+    # Check: Git repository
+    if (-not (Test-Path ".git")) {
+        Write-Error "Not a git repository! Initialize with: git init"
+        exit 1
+    }
+
+    # Check: Copilot CLI
+    $copilotPath = Get-Command "copilot" -ErrorAction SilentlyContinue
+    if (-not $copilotPath) {
+        Write-Error "GitHub Copilot CLI not found!"
+        exit 1
+    }
+
+    # Check: PRD Author skill
+    $skillFile = Join-Path $SkillsDir "ralph" "prd-author" "SKILL.md"
+    if (-not (Test-Path $skillFile)) {
+        Write-Error "PRD Author skill not found at: $skillFile"
+        exit 1
+    }
+    Write-Success "PRD Author skill found"
+
+    $skillContent = Get-Content $skillFile -Raw
+
+    $fullPrompt = @"
+$skillContent
+
+You are helping the user create a prd.md for Ralph-RLM-Framework.
+
+If a prd.md template exists at templates\prd.md, use it as the output structure.
+Guide the user through each phase described above.
+Save the final result as prd.md in the current directory.
+
+Start by asking the user about their project (Phase 1: Project Understanding).
+"@
+
+    Write-Host ""
+    Write-Info "Running PRD Author assistant..."
+    Write-Info "This will guide you through creating a high-quality prd.md"
+    Write-Host ""
+
+    Invoke-Copilot -Prompt $fullPrompt
+
+    if (Test-Path "prd.md") {
+        Write-Host ""
+        Write-Success "prd.md created successfully!"
+        Write-Host ""
+        Write-Host "Next steps:"
+        Write-Host "  1. Review prd.md"
+        Write-Host "  2. Run: .\ralph.ps1 auto"
+    }
+    else {
+        Write-Warning "prd.md was not created. You can create it manually using templates\prd.md"
+    }
 }
 
 # ══════════════════════════════════════════════════════════════
@@ -441,66 +514,84 @@ function Start-Implement {
     git stash push -m "ralph-pre-implement-$(Get-Date -Format 'yyyyMMddHHmmss')" --include-untracked 2>$null
     
     $iteration = 0
-    
+
+    # Pre-loop check: are there any features to work on?
+    $features = Get-Content "feature_list.json" | ConvertFrom-Json
+    $remaining = ($features.features | Where-Object { $_.status -eq "pending" -or $_.status -eq "in_progress" }).Count
+    if ($remaining -eq 0) {
+        $blockedCount = ($features.features | Where-Object { $_.status -eq "blocked" }).Count
+        if ($blockedCount -gt 0) {
+            Write-Warning "No pending features, but $blockedCount feature(s) are blocked"
+            Write-Info "Fix blocked features in feature_list.json and re-run"
+            return 2
+        }
+        else {
+            Write-Success "All features are already complete! Nothing to do."
+            return 0
+        }
+    }
+    Write-Info "$remaining feature(s) remaining to implement"
+
     while ($iteration -lt $script:MAX_IMPLEMENT_ITERATIONS) {
         Write-Host ""
         Write-Host "━━━ Implementation Iteration $($iteration + 1) of $script:MAX_IMPLEMENT_ITERATIONS ━━━" -ForegroundColor Cyan
         Write-Host "    $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor Cyan
         Write-Host ""
-        
+
         # Build the prompt
         $implPromptPath = Join-Path $PromptsDir "implementer.md"
         $implPrompt = Get-Content $implPromptPath -Raw
-        
+
         # Run Copilot
         Invoke-Copilot -Prompt $implPrompt
-        
+
         $exitCode = $LASTEXITCODE
-        
+
         if ($exitCode -ne 0) {
             Write-Warning "Copilot exited with code $exitCode"
         }
-        
-        # Check for completion
-        if (Test-Path "copilot-progress.txt") {
-            $progressContent = Get-Content "copilot-progress.txt" -Raw
-            
-            if ($progressContent -match "ALL_FEATURES_COMPLETE") {
-                Write-Host ""
-                Write-Host "╔══════════════════════════════════════════════════════════════╗" -ForegroundColor Green
-                Write-Host "║  🎉 " -ForegroundColor Green -NoNewline
-                Write-Host "ALL FEATURES COMPLETE!" -ForegroundColor White -NoNewline
-                Write-Host "                                   ║" -ForegroundColor Green
-                Write-Host "║     Total iterations: $($iteration + 1)                                  ║" -ForegroundColor Green
-                Write-Host "╚══════════════════════════════════════════════════════════════╝" -ForegroundColor Green
-                Write-Host ""
-                return 0
-            }
-            
-            if ($progressContent -match "BLOCKED_NEEDS_HUMAN") {
-                Write-Host ""
-                Write-Host "╔══════════════════════════════════════════════════════════════╗" -ForegroundColor Yellow
-                Write-Host "║  ⚠️  " -ForegroundColor Yellow -NoNewline
-                Write-Host "BLOCKED - Human intervention needed" -ForegroundColor White -NoNewline
-                Write-Host "                      ║" -ForegroundColor Yellow
-                Write-Host "║     Check copilot-progress.txt for details                   ║" -ForegroundColor Yellow
-                Write-Host "╚══════════════════════════════════════════════════════════════╝" -ForegroundColor Yellow
-                Write-Host ""
-                return 2
-            }
+
+        # Data-driven completion check: query feature_list.json directly
+        $features = Get-Content "feature_list.json" | ConvertFrom-Json
+        $total = $features.features.Count
+        $complete = ($features.features | Where-Object { $_.status -eq "complete" }).Count
+        $remaining = ($features.features | Where-Object { $_.status -eq "pending" -or $_.status -eq "in_progress" }).Count
+        $blockedCount = ($features.features | Where-Object { $_.status -eq "blocked" }).Count
+
+        # All features complete (none pending or in_progress, none blocked)
+        if ($remaining -eq 0 -and $blockedCount -eq 0) {
+            Write-Host ""
+            Write-Host "╔══════════════════════════════════════════════════════════════╗" -ForegroundColor Green
+            Write-Host "║  ALL FEATURES COMPLETE!  ($complete/$total)                       ║" -ForegroundColor Green
+            Write-Host "║     Total iterations: $($iteration + 1)                                  ║" -ForegroundColor Green
+            Write-Host "╚══════════════════════════════════════════════════════════════╝" -ForegroundColor Green
+            Write-Host ""
+            return 0
         }
-        
+
+        # No work left but some features are blocked
+        if ($remaining -eq 0 -and $blockedCount -gt 0) {
+            Write-Host ""
+            Write-Host "╔══════════════════════════════════════════════════════════════╗" -ForegroundColor Yellow
+            Write-Host "║  BLOCKED - Human intervention needed                         ║" -ForegroundColor Yellow
+            Write-Host "║     $complete/$total complete, $blockedCount blocked                              ║" -ForegroundColor Yellow
+            Write-Host "║     Check feature_list.json for blocked features                ║" -ForegroundColor Yellow
+            Write-Host "╚══════════════════════════════════════════════════════════════╝" -ForegroundColor Yellow
+            Write-Host ""
+            return 2
+        }
+
         $iteration++
-        
+
         if ($iteration -lt $script:MAX_IMPLEMENT_ITERATIONS) {
-            Write-Info "Iteration complete. Next in $script:SLEEP_BETWEEN seconds... (Ctrl+C to stop)"
+            Write-Info "Progress: $complete/$total complete, $remaining remaining. Next in $script:SLEEP_BETWEEN seconds... (Ctrl+C to stop)"
             Start-Sleep -Seconds $script:SLEEP_BETWEEN
         }
     }
-    
+
     Write-Host ""
     Write-Warning "Max iterations reached ($script:MAX_IMPLEMENT_ITERATIONS)"
-    Write-Info "Check copilot-progress.txt for current state"
+    Write-Info "Progress: $complete/$total complete, $remaining remaining"
     return 1
 }
 
@@ -625,21 +716,13 @@ function Show-Status {
     if (Test-Path "copilot-progress.txt") {
         $progressLines = (Get-Content "copilot-progress.txt").Count
         Write-Success "copilot-progress.txt exists ($progressLines lines)"
-        
-        $progressContent = Get-Content "copilot-progress.txt" -Raw
-        if ($progressContent -match "ALL_FEATURES_COMPLETE") {
-            Write-Host "    " -NoNewline; Write-Host "★ ALL_FEATURES_COMPLETE signal found" -ForegroundColor Green
-        }
-        if ($progressContent -match "BLOCKED_NEEDS_HUMAN") {
-            Write-Host "    " -NoNewline; Write-Host "★ BLOCKED_NEEDS_HUMAN signal found" -ForegroundColor Red
-        }
     }
     else {
         Write-Warning "copilot-progress.txt not found"
     }
-    
+
     Write-Host ""
-    
+
     # Next action
     Write-Host "NEXT ACTION" -ForegroundColor White
     if (-not (Test-Path "prd.md")) {
@@ -651,11 +734,14 @@ function Show-Status {
     elseif (-not (Test-Path "validation-state.json") -or ((Get-Content "validation-state.json" | ConvertFrom-Json).status -ne "complete")) {
         Write-Host "  → Run: .\ralph.ps1 validate"
     }
-    elseif ($complete -lt $total) {
+    elseif ($blocked -gt 0 -and $pending -eq 0 -and $inProgress -eq 0) {
+        Write-Host "  → $blocked feature(s) blocked. Fix in feature_list.json, then: .\ralph.ps1 run"
+    }
+    elseif ($pending -gt 0 -or $inProgress -gt 0) {
         Write-Host "  → Run: .\ralph.ps1 run"
     }
     else {
-        Write-Host "  → All done! 🎉"
+        Write-Host "  → All done!"
     }
     
     Write-Host ""
@@ -666,6 +752,7 @@ function Show-Status {
 # ══════════════════════════════════════════════════════════════
 
 switch ($Command) {
+    'author' { Start-Author }
     'init' { Start-Init }
     'validate' { Start-Validate }
     'run' { Start-Implement }
