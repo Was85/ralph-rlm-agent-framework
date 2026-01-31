@@ -635,6 +635,13 @@ run_implement() {
 
         log_debug "Status: $COMPLETE/$TOTAL complete, $REMAINING remaining, $BLOCKED_COUNT blocked"
 
+        # Sanity check: if total is 0, feature_list.json is corrupted
+        if [ "$TOTAL" -eq 0 ]; then
+            print_warning "feature_list.json appears corrupted (0 features found). Stopping loop."
+            print_info "Check feature_list.json for valid JSON structure."
+            return 1
+        fi
+
         # All features complete (none pending or in_progress, none blocked)
         if [ "$REMAINING" -eq 0 ] && [ "$BLOCKED_COUNT" -eq 0 ]; then
             echo ""

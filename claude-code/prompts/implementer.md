@@ -21,7 +21,7 @@ Skills are auto-discovered from `.claude/skills/`. Use them for consistent state
 - **`docs-lookup`** - API verification guidelines (read `.claude/skills/docs-lookup/SKILL.md` when using unfamiliar APIs)
 - **`nuget-manager`** - Safe NuGet package management (read `.claude/skills/nuget-manager/SKILL.md` for .NET projects)
 
-You can run the scripts directly or use the equivalent inline jq commands shown below.
+**CRITICAL: ALWAYS use the companion `.sh` scripts to update `feature_list.json`.** NEVER edit `feature_list.json` directly with inline `jq` writes, `ConvertTo-Json`, `sed`, or any other method. Direct manipulation has caused data corruption (wiping all features). The scripts handle atomic reads/writes safely. Read-only `jq` queries are fine for orientation.
 
 ---
 
@@ -208,17 +208,11 @@ pytest
 
 ## STEP 6A: IF TESTS PASS ✓
 
-1. Update `feature_list.json` (use skill script or inline):
+1. Update `feature_list.json` (**MUST use companion script**):
 ```bash
-# Script: ./.claude/skills/ralph/update-feature-status/update-feature-status.sh FXXX complete
+./.claude/skills/ralph/update-feature-status/update-feature-status.sh FXXX complete
 ```
-```json
-{
-  "status": "complete",
-  "attempts": N,
-  "last_error": null
-}
-```
+> **NEVER** edit feature_list.json directly. The script handles atomic read/write safely.
 
 2. Git commit:
 ```bash
@@ -269,17 +263,11 @@ grep -rn "error_message_from_test" --include="*.cs" | head -5
 grep -rn "similar_function" --include="*.cs" | head -5
 ```
 
-2. Update `feature_list.json` (use skill script or inline):
+2. Update `feature_list.json` (**MUST use companion script**):
 ```bash
-# Script: ./.claude/skills/ralph/increment-feature-attempts/increment-feature-attempts.sh FXXX --error "error message"
+./.claude/skills/ralph/increment-feature-attempts/increment-feature-attempts.sh FXXX "error message"
 ```
-```json
-{
-  "status": "in_progress",
-  "attempts": N+1,
-  "last_error": "Actual error message from test output"
-}
-```
+> **NEVER** edit feature_list.json directly. The script handles atomic read/write safely.
 
 3. Git commit (save progress):
 ```bash
@@ -327,6 +315,7 @@ The next iteration will see your failure notes and Codebase Patterns, and try a 
 - ✅ Try different approaches after failures
 
 ### DON'T:
+- ❌ **NEVER edit feature_list.json directly** — always use companion `.sh` scripts (direct manipulation causes data loss)
 - ❌ Try to read entire codebase at once
 - ❌ Mark features complete without passing tests
 - ❌ Work on multiple features at once

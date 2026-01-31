@@ -568,6 +568,13 @@ function Start-Implement {
         $remaining = ($features.features | Where-Object { $_.status -eq "pending" -or $_.status -eq "in_progress" }).Count
         $blockedCount = ($features.features | Where-Object { $_.status -eq "blocked" }).Count
 
+        # Sanity check: if total is 0, feature_list.json is corrupted
+        if ($total -eq 0) {
+            Write-Warning "feature_list.json appears corrupted (0 features found). Stopping loop."
+            Write-Info "Check feature_list.json for valid JSON structure."
+            return 1
+        }
+
         # All features complete (none pending or in_progress, none blocked)
         if ($remaining -eq 0 -and $blockedCount -eq 0) {
             Write-Host ""

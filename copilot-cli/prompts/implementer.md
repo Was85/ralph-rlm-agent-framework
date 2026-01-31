@@ -21,7 +21,7 @@ The framework provides modular skills in `skills/`. Use them for consistent stat
 - **`docs-lookup/SKILL.md`** - API verification guidelines (read when using unfamiliar APIs)
 - **`nuget-manager/SKILL.md`** - Safe NuGet package management (read for .NET projects)
 
-You can run the `.ps1` scripts directly or use the equivalent inline PowerShell/jq commands shown below.
+**CRITICAL: ALWAYS use the `.ps1` companion scripts to update `feature_list.json`.** NEVER edit `feature_list.json` directly with inline JSON manipulation, `ConvertTo-Json`, `jq`, or any other method. Direct manipulation has caused data corruption (wiping all features). The scripts handle atomic reads/writes safely.
 
 ---
 
@@ -46,19 +46,14 @@ Domain-specific coding standards are auto-loaded from `.github/instructions/` ba
 
 **DO NOT read entire feature_list.json** - it may be too large. Use targeted queries or skills:
 
-```bash
-# 1. Get project stats (use skill script or inline jq)
-# Script: ./skills/ralph/get-feature-stats/get-feature-stats.ps1
-jq '{project: .project, stats: .stats, config: .config}' feature_list.json
+```powershell
+# 1. Get project stats (use skill script)
+./skills/ralph/get-feature-stats/get-feature-stats.ps1
 
-# 2. Find current in-progress feature (if any)
-# Script: ./skills/ralph/get-next-feature/get-next-feature.ps1
-jq '.features[] | select(.status == "in_progress")' feature_list.json
+# 2. Find next feature to work on (use skill script)
+./skills/ralph/get-next-feature/get-next-feature.ps1
 
-# 3. If none in-progress, get next pending feature
-jq '[.features[] | select(.status == "pending")] | first' feature_list.json
-
-# 4. Check git state
+# 3. Check git state
 git log --oneline -5
 git status
 ```
@@ -71,16 +66,19 @@ Understand:
 
 ### If You Need to Find a Specific Feature
 
-```bash
+```powershell
 # Search by ID
-jq '.features[] | select(.id == "F042")' feature_list.json
+$json = Get-Content feature_list.json | ConvertFrom-Json
+$json.features | Where-Object { $_.id -eq "F042" }
 
 # Search by keyword in description
-jq '.features[] | select(.description | test("auth"; "i"))' feature_list.json
+$json.features | Where-Object { $_.description -match "auth" }
 
 # Count features by status
-jq '.features | group_by(.status) | map({status: .[0].status, count: length})' feature_list.json
+$json.features | Group-Object status | Select-Object Name, Count
 ```
+
+> **Note:** These read-only queries are safe. But for WRITES (status changes, attempt tracking), ALWAYS use the companion `.ps1` scripts.
 
 ---
 
@@ -208,17 +206,11 @@ pytest
 
 ## STEP 6A: IF TESTS PASS ✓
 
-1. Update `feature_list.json` (use skill script or inline):
-```bash
-# Script: ./skills/ralph/update-feature-status/update-feature-status.ps1 -FeatureId FXXX -Status complete
+1. Update `feature_list.json` (**MUST use companion script**):
+```powershell
+./skills/ralph/update-feature-status/update-feature-status.ps1 -FeatureId FXXX -Status complete
 ```
-```json
-{
-  "status": "complete",
-  "attempts": N,
-  "last_error": null
-}
-```
+> **NEVER** edit feature_list.json directly. The script handles atomic read/write safely.
 
 2. Git commit:
 ```bash
@@ -269,17 +261,11 @@ grep -rn "error_message_from_test" --include="*.cs" | head -5
 grep -rn "similar_function" --include="*.cs" | head -5
 ```
 
-2. Update `feature_list.json` (use skill script or inline):
-```bash
-# Script: ./skills/ralph/increment-feature-attempts/increment-feature-attempts.ps1 -FeatureId FXXX -ErrorMessage "error message"
+2. Update `feature_list.json` (**MUST use companion script**):
+```powershell
+./skills/ralph/increment-feature-attempts/increment-feature-attempts.ps1 -FeatureId FXXX -ErrorMessage "error message"
 ```
-```json
-{
-  "status": "in_progress",
-  "attempts": N+1,
-  "last_error": "Actual error message from test output"
-}
-```
+> **NEVER** edit feature_list.json directly. The script handles atomic read/write safely.
 
 3. Git commit (save progress):
 ```bash
@@ -327,6 +313,8 @@ The next iteration will see your failure notes and Codebase Patterns, and try a 
 - ✅ Try different approaches after failures
 
 ### DON'T:
+- ❌ **NEVER edit feature_list.json directly** — always use companion `.ps1` scripts (direct manipulation causes data loss)
+- ❌ **NEVER use jq** — this is a PowerShell environment, use the `.ps1` scripts
 - ❌ Try to read entire codebase at once
 - ❌ Mark features complete without passing tests
 - ❌ Work on multiple features at once
