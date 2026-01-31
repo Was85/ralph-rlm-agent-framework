@@ -352,7 +352,17 @@ Start by asking the user about their project (Phase 1: Project Understanding).
     Write-Info "This will guide you through creating a high-quality prd.md"
     Write-Host ""
 
-    Invoke-Copilot -Prompt $fullPrompt
+    # Use interactive mode (no -p flag) so the user can answer questions
+    if ($script:AllowAllToolsFlag) {
+        & copilot --allow-all-tools `
+                  --deny-tool "shell(Remove-Item)" `
+                  --deny-tool "shell(rm)" `
+                  --deny-tool "shell(sudo)" `
+                  $fullPrompt
+    }
+    else {
+        & copilot $fullPrompt
+    }
 
     if (Test-Path "prd.md") {
         Write-Host ""

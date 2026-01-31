@@ -314,6 +314,17 @@ preflight_check() {
         exit 1
     fi
     print_success "Claude Code CLI found"
+
+    # Check: jq (required for feature_list.json queries)
+    if ! command -v jq &> /dev/null; then
+        print_error "jq not found! Required for parsing feature_list.json."
+        echo "       Install:"
+        echo "         macOS:   brew install jq"
+        echo "         Ubuntu:  sudo apt install jq"
+        echo "         Windows: winget install jqlang.jq"
+        exit 1
+    fi
+    print_success "jq found"
     
     # Phase-specific checks
     case $phase in
@@ -420,7 +431,17 @@ run_author() {
     print_info "This will guide you through creating a high-quality prd.md"
     echo ""
 
-    claude $(get_claude_flags) -p "$(cat "$SKILL_FILE")
+    # Read skill content, stripping YAML frontmatter if present
+    # (frontmatter starts/ends with --- which claude CLI misinterprets as a flag)
+    local SKILL_CONTENT
+    if head -1 "$SKILL_FILE" | grep -q '^---$'; then
+        SKILL_CONTENT=$(awk 'BEGIN{c=0} /^---$/{c++; next} c>=2{print}' "$SKILL_FILE")
+    else
+        SKILL_CONTENT=$(cat "$SKILL_FILE")
+    fi
+
+    # Use interactive mode (no -p flag) so the user can answer questions
+    claude $(get_claude_flags) "$SKILL_CONTENT
 
 You are helping the user create a prd.md for Ralph-RLM-Framework.
 

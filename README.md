@@ -317,7 +317,7 @@ Because completion is derived from the data, you can **add new features at any t
 ### Claude Code Edition
 - [Claude Code CLI](https://github.com/anthropics/claude-code) installed
 - Anthropic API key configured
-- Git, Bash
+- Git, Bash, [jq](https://jqlang.github.io/jq/download/)
 
 ### Copilot CLI Edition  
 - [GitHub Copilot CLI](https://github.com/features/copilot/cli) installed
