@@ -352,16 +352,16 @@ Start by asking the user about their project (Phase 1: Project Understanding).
     Write-Info "This will guide you through creating a high-quality prd.md"
     Write-Host ""
 
-    # Use interactive mode (no -p flag) so the user can answer questions
+    # Use interactive mode (-i flag) so the user can answer questions
     if ($script:AllowAllToolsFlag) {
-        & copilot --allow-all-tools `
+        & copilot -i $fullPrompt `
+                  --allow-all-tools `
                   --deny-tool "shell(Remove-Item)" `
                   --deny-tool "shell(rm)" `
-                  --deny-tool "shell(sudo)" `
-                  $fullPrompt
+                  --deny-tool "shell(sudo)"
     }
     else {
-        & copilot $fullPrompt
+        & copilot -i $fullPrompt
     }
 
     if (Test-Path "prd.md") {
