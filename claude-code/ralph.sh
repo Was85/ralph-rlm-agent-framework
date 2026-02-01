@@ -147,20 +147,13 @@ log_debug() {
     fi
 }
 
-# Build Claude CLI flags based on verbose/debug/stream settings
+# Build Claude CLI flags based on verbose/debug settings
 get_claude_flags() {
-    local flags=""
+    local flags="--dangerously-skip-permissions"
     if [[ "$DEBUG_MODE" == "true" ]]; then
-        flags="--debug"
+        flags="$flags --debug"
     elif [[ "$VERBOSE" == "true" ]]; then
-        flags="--verbose"
-    fi
-    if [[ "$STREAM_OUTPUT" == "true" ]]; then
-        # stream-json requires --verbose explicitly (--debug alone is not enough)
-        if [[ "$flags" != *"--verbose"* ]]; then
-            flags="$flags --verbose"
-        fi
-        flags="$flags --output-format stream-json"
+        flags="$flags --verbose"
     fi
     echo "$flags"
 }
