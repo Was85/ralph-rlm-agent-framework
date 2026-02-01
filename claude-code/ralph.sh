@@ -37,7 +37,7 @@ SLEEP_BETWEEN=${SLEEP_BETWEEN:-2}
 COVERAGE_THRESHOLD=${COVERAGE_THRESHOLD:-95}
 VERBOSE=${VERBOSE:-false}
 DEBUG_MODE=${DEBUG_MODE:-false}
-STREAM_OUTPUT=${STREAM_OUTPUT:-false}
+ALLOW_ALL_TOOLS=${ALLOW_ALL_TOOLS:-false}
 LOG_FILE="ralph-debug.log"
 
 # ══════════════════════════════════════════════════════════════
@@ -86,8 +86,8 @@ parse_flags() {
                 DEBUG_MODE=true
                 VERBOSE=true
                 ;;
-            --stream)
-                STREAM_OUTPUT=true
+            --allow-all)
+                ALLOW_ALL_TOOLS=true
                 ;;
             -*)
                 print_error "Unknown flag: $1"
@@ -147,14 +147,37 @@ log_debug() {
     fi
 }
 
-# Build Claude CLI flags based on verbose/debug settings
+# Build Claude CLI flags based on tool permissions and verbosity
 get_claude_flags() {
-    local flags="--dangerously-skip-permissions"
+    local flags=""
+
+    if [[ "$ALLOW_ALL_TOOLS" == "true" ]]; then
+        # Full bypass with deny rules for destructive operations
+        flags="--dangerously-skip-permissions"
+        flags="$flags --disallowedTools \"Bash(rm -rf:*)\" \"Bash(sudo:*)\""
+    else
+        # Explicit allowlist — safe default for autonomous operation
+        flags="$flags --allowedTools"
+        # File operations
+        flags="$flags \"Read\" \"Write\" \"Edit\" \"Glob\" \"Grep\" \"TodoWrite\""
+        # Git
+        flags="$flags \"Bash(git:*)\""
+        # Build tools
+        flags="$flags \"Bash(dotnet:*)\" \"Bash(npm:*)\" \"Bash(node:*)\" \"Bash(python:*)\" \"Bash(pytest:*)\""
+        # Shell utilities needed by implementer
+        flags="$flags \"Bash(jq:*)\" \"Bash(head:*)\" \"Bash(cat:*)\" \"Bash(grep:*)\" \"Bash(find:*)\""
+        flags="$flags \"Bash(ls:*)\" \"Bash(mkdir:*)\" \"Bash(cp:*)\" \"Bash(mv:*)\" \"Bash(wc:*)\" \"Bash(chmod:*)\""
+        # Ralph companion scripts (./ prefix)
+        flags="$flags \"Bash(./:*)\""
+    fi
+
+    # Verbosity flags
     if [[ "$DEBUG_MODE" == "true" ]]; then
         flags="$flags --debug"
     elif [[ "$VERBOSE" == "true" ]]; then
         flags="$flags --verbose"
     fi
+
     echo "$flags"
 }
 
@@ -247,7 +270,7 @@ show_help() {
     echo "  -s, --sleep N                   Seconds between iterations (default: 2)"
     echo "  -v, --verbose                   Show context summary and RLM debug info"
     echo "  --debug                         Enable Claude Code debug-level tracing (implies --verbose)"
-    echo "  --stream                        Stream Claude Code output as JSON (--output-format stream-json)"
+    echo "  --allow-all                     Full tool access with deny rules (less safe, faster)"
     echo ""
     echo -e "${BOLD}WORKFLOW${NC}"
     echo ""
@@ -285,6 +308,8 @@ show_help() {
     echo "  ./ralph.sh run --max-iterations=100      # Run with max 100 iterations"
     echo "  ./ralph.sh validate -c 90                # Validate with 90% coverage threshold"
     echo "  ./ralph.sh run -v                        # Run with verbose/debug output"
+    echo "  ./ralph.sh run --allow-all               # Full tool access (less safe)"
+    echo "  ./ralph.sh auto --allow-all --debug      # Full access + debug tracing"
     echo ""
     echo -e "${BOLD}FILES${NC}"
     echo "  prd.md                Your requirements (input)"

@@ -310,7 +310,23 @@ Because completion is derived from the data, you can **add new features at any t
 - **Git checkpoints** — Progress is committed, easy to rollback
 - **Blocked status** — If stuck, Ralph marks features as blocked for human review
 - **Max iterations** — Configurable limit prevents infinite loops
-- **Tool restrictions** — Dangerous operations (rm, sudo) are blocked by default
+- **Tool permissions** — Two-tier permission model for both editions:
+
+  **Default mode** — Explicit allowlist of safe tools only:
+  | Category | Allowed |
+  |----------|---------|
+  | File ops | Read, Write, Edit, Glob, Grep |
+  | Git | `git` (all subcommands) |
+  | Build | `dotnet`, `npm`, `node`, `python`, `pytest` |
+  | Utilities | `jq`, `head`, `cat`, `grep`, `find`, `ls`, `mkdir`, `cp`, `mv`, `wc`, `chmod` |
+  | Scripts | `./` prefix (Ralph companion scripts) |
+
+  **Allow-all mode** (`--allow-all` / `-AllowAllTools`) — Full tool access with deny rules:
+  | Blocked |
+  |---------|
+  | `rm -rf`, `sudo` (Bash) / `Remove-Item`, `rm`, `sudo` (PowerShell) |
+
+- **Windows NUL file cleanup** — Automatically removes stale `nul` files before each iteration (workaround for a Claude Code bug on Windows where a literal `nul` file gets created and blocks git operations)
 
 ## Requirements
 
@@ -330,14 +346,28 @@ Because completion is derived from the data, you can **add new features at any t
 
 Both editions support these flags:
 
+**Common flags (both editions):**
+
 | Flag | Short | Default | Description |
 |------|-------|---------|-------------|
 | `--max-iterations` | `-m` | 50 | Max implementation iterations before stopping |
 | `--max-validate-iterations` | | 10 | Max validation iterations |
 | `--coverage-threshold` | `-c` | 95 | Required PRD coverage % before implementation |
 | `--sleep` | `-s` | 2 | Seconds between iterations |
-| `--verbose` | `-v` | false | Show context summary and debug info (Bash only) |
-| `-AllowAllTools` | | false | Enable all Copilot tools (PowerShell only, less safe) |
+
+**Claude Code flags:**
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--verbose` | `-v` | false | Show context summary and debug info |
+| `--debug` | | false | Enable Claude Code debug-level tracing (implies `--verbose`) |
+| `--allow-all` | | false | Full tool access with deny rules (less safe, faster) |
+
+**Copilot CLI flags:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-AllowAllTools` | false | Enable all Copilot tools with deny rules (less safe) |
 
 **Examples:**
 ```bash
@@ -346,6 +376,15 @@ Both editions support these flags:
 
 # Bash - Verbose mode with debug output
 ./ralph.sh run -v
+
+# Bash - Debug tracing
+./ralph.sh run --debug
+
+# Bash - Full tool access (less safe, faster — no permission prompts)
+./ralph.sh auto --allow-all
+
+# Bash - Full tool access with debug tracing
+./ralph.sh auto --allow-all --debug
 ```
 
 ```powershell
@@ -471,6 +510,26 @@ git stash list
 # Restore most recent stash
 git stash pop
 ```
+
+### Git Commit Fails on Windows (NUL File)
+
+Claude Code on Windows can sometimes create a literal file called `nul` (a Windows reserved device name), which breaks git operations. Ralph automatically cleans this up before each iteration, but if you encounter it manually:
+
+```bash
+rm -f nul
+```
+
+### Implementation Hangs at "Iteration 1 Starting"
+
+The agent is likely waiting for tool permission approval in headless mode. Use `--allow-all` to bypass permissions, or ensure the default allowlist covers the tools your project needs:
+
+```bash
+./ralph.sh run --allow-all
+```
+
+### Build Artifacts Cluttering Git Status
+
+If `bin/`, `obj/`, or `Debug/` folders show as untracked files, add a `.gitignore` to your project. Include this in your PRD requirements so the initializer creates one as a feature.
 
 ### Common Error Messages
 
