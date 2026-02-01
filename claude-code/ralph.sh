@@ -36,6 +36,8 @@ MAX_IMPLEMENT_ITERATIONS=${MAX_IMPLEMENT_ITERATIONS:-50}
 SLEEP_BETWEEN=${SLEEP_BETWEEN:-2}
 COVERAGE_THRESHOLD=${COVERAGE_THRESHOLD:-95}
 VERBOSE=${VERBOSE:-false}
+DEBUG_MODE=${DEBUG_MODE:-false}
+STREAM_OUTPUT=${STREAM_OUTPUT:-false}
 LOG_FILE="ralph-debug.log"
 
 # ══════════════════════════════════════════════════════════════
@@ -79,6 +81,13 @@ parse_flags() {
                 ;;
             -v|--verbose)
                 VERBOSE=true
+                ;;
+            --debug)
+                DEBUG_MODE=true
+                VERBOSE=true
+                ;;
+            --stream)
+                STREAM_OUTPUT=true
                 ;;
             -*)
                 print_error "Unknown flag: $1"
@@ -138,11 +147,16 @@ log_debug() {
     fi
 }
 
-# Build Claude CLI flags based on verbose setting
+# Build Claude CLI flags based on verbose/debug/stream settings
 get_claude_flags() {
     local flags=""
-    if [[ "$VERBOSE" == "true" ]]; then
+    if [[ "$DEBUG_MODE" == "true" ]]; then
+        flags="--debug"
+    elif [[ "$VERBOSE" == "true" ]]; then
         flags="--verbose"
+    fi
+    if [[ "$STREAM_OUTPUT" == "true" ]]; then
+        flags="$flags --output-format stream-json"
     fi
     echo "$flags"
 }
@@ -235,6 +249,8 @@ show_help() {
     echo "  -c, --coverage-threshold N      Required PRD coverage % (default: 95)"
     echo "  -s, --sleep N                   Seconds between iterations (default: 2)"
     echo "  -v, --verbose                   Show context summary and RLM debug info"
+    echo "  --debug                         Enable Claude Code debug-level tracing (implies --verbose)"
+    echo "  --stream                        Stream Claude Code output as JSON (--output-format stream-json)"
     echo ""
     echo -e "${BOLD}WORKFLOW${NC}"
     echo ""
@@ -616,6 +632,13 @@ run_implement() {
         echo -e "${CYAN}    $(date '+%Y-%m-%d %H:%M:%S')${NC}"
         log_debug "Implementation iteration $((ITERATION + 1)) starting"
         echo ""
+
+        # Windows NUL file cleanup: Claude Code on Windows can create a literal 'nul' file
+        # (Windows reserved device name) which breaks git operations. Remove it if present.
+        if [ -f "nul" ]; then
+            rm -f "nul" 2>/dev/null || true
+            log_debug "Removed stale 'nul' file (Windows Claude Code bug)"
+        fi
 
         # Run implementer
         claude $(get_claude_flags) -p "$(cat "$PROMPTS_DIR/implementer.md")"
