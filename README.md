@@ -362,6 +362,7 @@ Both editions support these flags:
 | `--verbose` | `-v` | false | Show context summary and debug info |
 | `--debug` | | false | Enable Claude Code debug-level tracing (implies `--verbose`) |
 | `--allow-all` | | false | Full tool access with deny rules (less safe, faster) |
+| `--stream` | | false | Stream JSON output for CI/automation (auto-adds `--verbose`) |
 
 **Copilot CLI flags:**
 

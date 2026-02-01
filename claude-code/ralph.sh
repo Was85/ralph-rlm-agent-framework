@@ -38,6 +38,7 @@ COVERAGE_THRESHOLD=${COVERAGE_THRESHOLD:-95}
 VERBOSE=${VERBOSE:-false}
 DEBUG_MODE=${DEBUG_MODE:-false}
 ALLOW_ALL_TOOLS=${ALLOW_ALL_TOOLS:-false}
+STREAM_OUTPUT=${STREAM_OUTPUT:-false}
 LOG_FILE="ralph-debug.log"
 
 # ══════════════════════════════════════════════════════════════
@@ -88,6 +89,9 @@ parse_flags() {
                 ;;
             --allow-all)
                 ALLOW_ALL_TOOLS=true
+                ;;
+            --stream)
+                STREAM_OUTPUT=true
                 ;;
             -*)
                 print_error "Unknown flag: $1"
@@ -176,6 +180,14 @@ get_claude_flags() {
         flags="$flags --debug"
     elif [[ "$VERBOSE" == "true" ]]; then
         flags="$flags --verbose"
+    fi
+
+    # Stream JSON output (requires --verbose)
+    if [[ "$STREAM_OUTPUT" == "true" ]]; then
+        if [[ "$flags" != *"--verbose"* ]]; then
+            flags="$flags --verbose"
+        fi
+        flags="$flags --output-format stream-json"
     fi
 
     echo "$flags"
@@ -271,6 +283,7 @@ show_help() {
     echo "  -v, --verbose                   Show context summary and RLM debug info"
     echo "  --debug                         Enable Claude Code debug-level tracing (implies --verbose)"
     echo "  --allow-all                     Full tool access with deny rules (less safe, faster)"
+    echo "  --stream                        Stream Claude Code output as JSON (for CI/automation)"
     echo ""
     echo -e "${BOLD}WORKFLOW${NC}"
     echo ""
