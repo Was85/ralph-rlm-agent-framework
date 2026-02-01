@@ -321,10 +321,11 @@ Because completion is derived from the data, you can **add new features at any t
   | Utilities | `jq`, `head`, `cat`, `grep`, `find`, `ls`, `mkdir`, `cp`, `mv`, `wc`, `chmod` |
   | Scripts | `./` prefix (Ralph companion scripts) |
 
-  **Allow-all mode** (`--allow-all` / `-AllowAllTools`) — Full tool access with deny rules:
-  | Blocked |
-  |---------|
-  | `rm -rf`, `sudo` (Bash) / `Remove-Item`, `rm`, `sudo` (PowerShell) |
+  **Allow-all mode** — Full tool access, no permission prompts:
+  | Edition | Flag | Deny rules |
+  |---------|------|------------|
+  | Claude Code | `--dangerously-skip-permissions` | None (full bypass) |
+  | Copilot CLI | `-AllowAllTools` | `Remove-Item`, `rm`, `sudo` blocked |
 
 - **Windows NUL file cleanup** — Automatically removes stale `nul` files before each iteration (workaround for a Claude Code bug on Windows where a literal `nul` file gets created and blocks git operations)
 
@@ -361,7 +362,7 @@ Both editions support these flags:
 |------|-------|---------|-------------|
 | `--verbose` | `-v` | false | Show context summary and debug info |
 | `--debug` | | false | Enable Claude Code debug-level tracing (implies `--verbose`) |
-| `--allow-all` | | false | Full tool access with deny rules (less safe, faster) |
+| `--dangerously-skip-permissions` | | false | Full tool access, no permission prompts (less safe, faster) |
 | `--stream` | | false | Stream JSON output for CI/automation (auto-adds `--verbose`) |
 
 **Copilot CLI flags:**
@@ -382,10 +383,10 @@ Both editions support these flags:
 ./ralph.sh run --debug
 
 # Bash - Full tool access (less safe, faster — no permission prompts)
-./ralph.sh auto --allow-all
+./ralph.sh auto --dangerously-skip-permissions
 
 # Bash - Full tool access with debug tracing
-./ralph.sh auto --allow-all --debug
+./ralph.sh auto --dangerously-skip-permissions --debug
 ```
 
 ```powershell
@@ -522,10 +523,10 @@ rm -f nul
 
 ### Implementation Hangs at "Iteration 1 Starting"
 
-The agent is likely waiting for tool permission approval in headless mode. Use `--allow-all` to bypass permissions, or ensure the default allowlist covers the tools your project needs:
+The agent is likely waiting for tool permission approval in headless mode. Use `--dangerously-skip-permissions` to bypass permissions, or ensure the default allowlist covers the tools your project needs:
 
 ```bash
-./ralph.sh run --allow-all
+./ralph.sh run --dangerously-skip-permissions
 ```
 
 ### Build Artifacts Cluttering Git Status

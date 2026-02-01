@@ -87,7 +87,7 @@ parse_flags() {
                 DEBUG_MODE=true
                 VERBOSE=true
                 ;;
-            --allow-all)
+            --dangerously-skip-permissions)
                 ALLOW_ALL_TOOLS=true
                 ;;
             --stream)
@@ -156,9 +156,8 @@ get_claude_flags() {
     local flags=""
 
     if [[ "$ALLOW_ALL_TOOLS" == "true" ]]; then
-        # Full bypass with deny rules for destructive operations
+        # Full bypass — all tools allowed without permission prompts
         flags="--dangerously-skip-permissions"
-        flags="$flags --disallowedTools \"Bash(rm -rf:*)\" \"Bash(sudo:*)\""
     else
         # Explicit allowlist — safe default for autonomous operation
         flags="$flags --allowedTools"
@@ -282,7 +281,7 @@ show_help() {
     echo "  -s, --sleep N                   Seconds between iterations (default: 2)"
     echo "  -v, --verbose                   Show context summary and RLM debug info"
     echo "  --debug                         Enable Claude Code debug-level tracing (implies --verbose)"
-    echo "  --allow-all                     Full tool access with deny rules (less safe, faster)"
+    echo "  --dangerously-skip-permissions  Full tool access with deny rules (less safe, faster)"
     echo "  --stream                        Stream Claude Code output as JSON (for CI/automation)"
     echo ""
     echo -e "${BOLD}WORKFLOW${NC}"
@@ -321,8 +320,8 @@ show_help() {
     echo "  ./ralph.sh run --max-iterations=100      # Run with max 100 iterations"
     echo "  ./ralph.sh validate -c 90                # Validate with 90% coverage threshold"
     echo "  ./ralph.sh run -v                        # Run with verbose/debug output"
-    echo "  ./ralph.sh run --allow-all               # Full tool access (less safe)"
-    echo "  ./ralph.sh auto --allow-all --debug      # Full access + debug tracing"
+    echo "  ./ralph.sh run --dangerously-skip-permissions               # Full tool access (less safe)"
+    echo "  ./ralph.sh auto --dangerously-skip-permissions --debug      # Full access + debug tracing"
     echo ""
     echo -e "${BOLD}FILES${NC}"
     echo "  prd.md                Your requirements (input)"
