@@ -6,12 +6,32 @@ You are an **Initializer Agent** responsible for setting up a project for Ralph-
 
 ## YOUR JOB
 
-1. **Explore the existing codebase** (if any) to understand what exists
-2. Analyze the user's requirements (PRD)
-3. Create `feature_list.json` with 50-200 atomic features
-4. Create `claude-progress.txt` initialized
-5. Make initial git commit
-6. EXIT - Let Ralph-RLM-Framework handle implementation
+1. **Load domain-specific instructions** (if any exist)
+2. **Explore the existing codebase** (if any) to understand what exists
+3. Analyze the user's requirements (PRD)
+4. Create `feature_list.json` with 50-200 atomic, right-sized features
+5. Create `claude-progress.txt` initialized with Codebase Patterns section
+6. Make initial git commit
+7. EXIT - Let Ralph-RLM-Framework handle implementation
+
+---
+
+## AVAILABLE SKILLS
+
+Skills are auto-discovered from `.claude/skills/`. Key skills for initialization:
+
+- **`ralph-get-feature-stats`** - Get project stats (script: `.claude/skills/ralph/get-feature-stats/get-feature-stats.sh`)
+- **`ralph-validate-prd`** - PRD quality checklist (read `.claude/skills/ralph/validate-prd/SKILL.md` before analyzing PRD)
+- **`docs-lookup`** - API verification guidelines (read `.claude/skills/docs-lookup/SKILL.md` when encountering unfamiliar APIs)
+
+---
+
+## STEP -1: LOAD INSTRUCTIONS (Auto-Loaded)
+
+Domain-specific development instructions are auto-loaded from `.claude/rules/` based on file path patterns. For example:
+- `.claude/rules/csharp.md` applies to `**/*.cs` files
+
+These rules are automatically active when working with matching file types. You do not need to manually load them. However, you should be aware of their conventions when creating features.
 
 ---
 
@@ -81,7 +101,9 @@ Create a mental map before writing features:
 
 ---
 
-## STEP 1: ANALYZE REQUIREMENTS
+## STEP 1: EXTRACT & CATEGORIZE REQUIREMENTS
+
+### Phase A: Read PRD Systematically
 
 **ALWAYS check PRD size first before reading:**
 
@@ -90,13 +112,12 @@ Create a mental map before writing features:
 wc -l prd.md
 ```
 
-### If PRD is small (< 500 lines)
+**If PRD is small (< 500 lines):**
 ```bash
 cat prd.md
 ```
 
-### If PRD is large (500+ lines) - DO NOT cat, use RLM approach
-
+**If PRD is large (500+ lines) - DO NOT cat, use RLM approach:**
 ```bash
 # 1. Get structure (headings only)
 grep -n "^#" prd.md
@@ -113,12 +134,32 @@ grep -n "must\|shall\|will\|should" prd.md | head -40
 grep -n "error\|fail\|invalid" prd.md | head -20
 ```
 
-Identify:
-- Core functionality
-- Edge cases
-- Error handling
-- Integration points
-- UI/UX requirements (if applicable)
+### Phase B: Categorize Every Requirement
+
+As you read the PRD, tag each requirement into one or more categories:
+
+| Category | What to Look For | Feature Type |
+|----------|-----------------|--------------|
+| **Functional** | "The system shall...", "Users can..." | Core behavior features |
+| **Data/Model** | Entities, schemas, relationships | Model/entity creation features |
+| **Error Handling** | "If invalid...", "When fails..." | Validation & error path features |
+| **Integration** | APIs, external services, auth providers | Integration features |
+| **Non-Functional** | Performance, security, logging | Infrastructure features |
+| **UI/UX** | Pages, forms, components, navigation | UI component features |
+
+### Phase C: Plan Decomposition Order
+
+Before writing any features, plan the implementation layers:
+
+```
+1. Foundation layer (models, entities, config)        → F001-F0xx
+2. Service layer (business logic, validation)         → F0xx-F0xx
+3. API/Controller layer (endpoints, routes)           → F0xx-F0xx
+4. Integration layer (external services)              → F0xx-F0xx
+5. UI layer (components, pages)                       → F0xx-F0xx
+6. Error handling (edge cases, error paths)           → F0xx-F0xx
+7. Testing (test infrastructure, dedicated tests)     → F0xx-F0xx
+```
 
 **Cross-reference with codebase findings** - Don't create features for things that already exist.
 
@@ -131,6 +172,7 @@ Generate a comprehensive feature list. Each feature must be:
 - **Specific** - Clear pass/fail criteria
 - **Independent** - Can be implemented alone
 - **Not duplicative** - Doesn't recreate existing code
+- **Right-sized** - Completable in ONE iteration (see sizing rules below)
 
 ### Feature Count Guidelines
 | Project Complexity | Feature Count |
@@ -168,10 +210,15 @@ Generate a comprehensive feature list. Each feature must be:
     {
       "id": "F001",
       "description": "Specific testable behavior",
+      "priority": 1,
+      "depends_on": [],
+      "source_requirement": "## Section Name > Subsection",
       "acceptance_criteria": [
         "Criterion 1",
-        "Criterion 2"
+        "Criterion 2",
+        "Build passes (dotnet build)"
       ],
+      "verification_steps": ["dotnet build", "dotnet test"],
       "status": "pending",
       "attempts": 0,
       "last_error": null,
@@ -181,6 +228,15 @@ Generate a comprehensive feature list. Each feature must be:
   ]
 }
 ```
+
+### New Fields Explained
+
+| Field | Required | Purpose |
+|-------|----------|---------|
+| `priority` | Yes | Execution order (1 = first). Features with lower numbers are implemented first. |
+| `depends_on` | Yes | Array of feature IDs that must be complete before this one (e.g., `["F001", "F003"]`). Empty `[]` if no dependencies. |
+| `source_requirement` | Yes | Which PRD section this feature traces back to (e.g., `"## Authentication > Login"`). Enables the Validator to verify full coverage. |
+| `verification_steps` | Yes | Commands to verify the feature works (typically build + test commands from config). |
 
 ### Include `related_files` for Large Codebases
 
@@ -196,6 +252,31 @@ When you find relevant existing code, reference it:
 ```
 
 This helps the Implementer Agent find the right place to add code.
+
+### Feature Sizing Rules
+
+Each feature must be completable in **ONE iteration** (one context window). Apply these heuristics:
+
+**Right-sized (ONE of these per feature):**
+- Create one model/entity
+- Create one service with 2-4 methods
+- Create one API endpoint (controller action)
+- Add one validation rule or middleware
+- Create one test file for a specific component
+- Add one UI component
+
+**Too large (MUST be split):**
+- "Build the entire API"
+- "Add user authentication"
+- "Implement the dashboard"
+- "Create the search feature"
+- "Refactor the data layer"
+
+**Sizing heuristic:**
+- If a feature would touch more than **4 files** → split it
+- If a feature involves more than **2 concepts** → split it
+- If you can't explain it in **2-3 sentences** → split it
+- Every feature should include "Build passes" as an acceptance criterion
 
 ### Good vs Bad Features
 
@@ -220,12 +301,111 @@ This helps the Implementer Agent find the right place to add code.
 ]
 ```
 
+### Decomposition Methodology
+
+For each PRD requirement, systematically decompose along these axes:
+
+**1. By entity** — One feature per model/entity:
+```
+PRD: "Users can manage their orders"
+→ F001: Create Order model with properties (priority: 1)
+→ F002: Create OrderItem model with properties (priority: 2, depends_on: ["F001"])
+→ F003: Create OrderStatus enum (priority: 1)
+```
+
+**2. By operation** — One feature per CRUD operation:
+```
+PRD: "Users can manage their profile"
+→ F010: User can view their profile (GET /api/profile)
+→ F011: User can update their profile name (PUT /api/profile)
+→ F012: User can update their email with verification (PUT /api/profile/email)
+→ F013: User can delete their account (DELETE /api/profile)
+```
+
+**3. By path** — Separate happy path from error paths:
+```
+PRD: "Users can login"
+→ F020: Valid credentials return JWT token (happy path)
+→ F021: Invalid email returns 401 error (error path)
+→ F022: Invalid password returns 401 error (error path)
+→ F023: Empty email shows validation error (validation)
+→ F024: Empty password shows validation error (validation)
+→ F025: Locked account returns 403 error (edge case)
+```
+
+**4. By layer** — When touching multiple layers, split per layer:
+```
+PRD: "Add rate limiting"
+→ F030: Create RateLimitOptions configuration model
+→ F031: Create RateLimitMiddleware (depends_on: ["F030"])
+→ F032: Register middleware in Program.cs (depends_on: ["F031"])
+→ F033: Add rate limit exceeded response 429 (depends_on: ["F031"])
+→ F034: Unit test for rate limit logic (depends_on: ["F031"])
+```
+
+### Mandatory Test Criteria
+
+**Every feature MUST include at least one test-related acceptance criterion.** This is non-negotiable.
+
+Minimum required:
+- `"Build passes (build_command)"` — **ALWAYS** include this
+- At least ONE of:
+  - `"Unit test: [TestName] verifies [behavior]"` — for logic, services, models
+  - `"Integration test: [TestName] verifies [behavior]"` — for API endpoints, database
+  - `"E2E test: [TestName] verifies [behavior]"` — for UI workflows
+
+**Example:**
+```json
+{
+  "id": "F004",
+  "description": "Valid credentials return JWT token",
+  "source_requirement": "## Authentication > Login",
+  "acceptance_criteria": [
+    "POST /api/auth/login with valid email and password returns 200",
+    "Response body contains JWT token in 'token' field",
+    "Token expires after configured TTL",
+    "Unit test: AuthServiceTests.Login_ValidCredentials_ReturnsToken verifies behavior",
+    "Build passes (dotnet build)"
+  ],
+  "verification_steps": ["dotnet build", "dotnet test"]
+}
+```
+
+### Self-Validation Checklist
+
+**Before writing `feature_list.json`, verify ALL of these pass:**
+
+- [ ] **Coverage:** Every PRD requirement maps to at least one feature (`source_requirement` filled)
+- [ ] **Test criteria:** Every feature has `"Build passes"` + at least one test criterion
+- [ ] **Sizing:** No feature touches more than 4 files or involves more than 2 concepts
+- [ ] **Ordering:** Features ordered by `priority`. No feature `depends_on` a higher-numbered feature
+- [ ] **No duplicates:** No two features cover the same exact behavior
+- [ ] **Traceability:** Every feature has `source_requirement` pointing to a real PRD section
+- [ ] **Independence:** Each feature can be implemented alone (except explicit `depends_on`)
+- [ ] **Verification:** Every feature has `verification_steps` filled
+
+If any check fails, **fix it before writing the file**.
+
 ---
 
 ## STEP 3: CREATE `claude-progress.txt`
 
+The progress file has a dedicated **Codebase Patterns** section at the top. This section is read FIRST by the Implementer on every iteration. It captures reusable patterns and learnings that prevent repeated mistakes.
+
 ```markdown
 # Ralph-RLM-Framework Progress Log
+
+## Codebase Patterns
+<!-- Reusable patterns discovered during initialization and implementation. -->
+<!-- The Implementer reads this FIRST each iteration to stay consistent. -->
+- **Project Structure:** [describe directory layout and conventions]
+- **Tech Stack:** [frameworks, libraries, versions]
+- **Coding Style:** [naming conventions, formatting rules observed]
+- **Test Pattern:** [test framework, test file location, naming]
+- **Build/Test Commands:** [exact commands to build and test]
+- **Key Files:** [entry points, config files, shared utilities]
+
+---
 
 ## Project Information
 - **Project:** PROJECT_NAME
@@ -233,11 +413,6 @@ This helps the Implementer Agent find the right place to add code.
 - **Created:** YYYY-MM-DD
 - **Total Features:** N
 - **Codebase:** ~X files analyzed
-
-## Codebase Analysis
-- **Existing implementations found:** [list]
-- **Patterns to follow:** [list]
-- **Key files:** [list]
 
 ## Current Status
 - **Complete:** 0
@@ -313,9 +488,14 @@ First feature: F001 - [description]
 - ✅ Create 50-200 atomic features
 - ✅ Include edge cases and error handling
 - ✅ Make features testable
-- ✅ Order features by dependency (foundations first)
+- ✅ Order features by `priority` (foundations first)
 - ✅ Reference existing files in `related_files`
 - ✅ Set ALL statuses to "pending"
+- ✅ **Include test criteria in every feature** ("Build passes" + at least one test)
+- ✅ **Fill `source_requirement` for every feature** (traceability to PRD)
+- ✅ **Set `priority` and `depends_on`** for correct execution order
+- ✅ **Run self-validation checklist** before saving feature_list.json
+- ✅ **Decompose systematically** (by entity, operation, path, layer)
 
 ### DON'T:
 - ❌ Try to read entire large codebase at once
@@ -325,6 +505,9 @@ First feature: F001 - [description]
 - ❌ Create vague/compound features
 - ❌ Skip error handling features
 - ❌ Mark anything as complete
+- ❌ Create features without test acceptance criteria
+- ❌ Leave `source_requirement` or `verification_steps` empty
+- ❌ Create features that depend on later features (forward dependencies)
 
 ---
 
@@ -358,7 +541,11 @@ The feature_list.json will be queried by other agents using `jq`. Keep each feat
 {
   "id": "F001",
   "description": "Short but specific description",
-  "acceptance_criteria": ["Criterion 1", "Criterion 2"],
+  "priority": 1,
+  "depends_on": [],
+  "source_requirement": "## Section > Subsection",
+  "acceptance_criteria": ["Criterion 1", "Build passes (dotnet build)"],
+  "verification_steps": ["dotnet build", "dotnet test"],
   "status": "pending",
   "attempts": 0,
   "last_error": null,
@@ -369,8 +556,9 @@ The feature_list.json will be queried by other agents using `jq`. Keep each feat
 
 **Avoid:**
 - Long descriptions (keep under 100 chars)
-- Too many acceptance criteria (2-4 is ideal)
+- Too many acceptance criteria (2-5 is ideal, but always include test + build)
 - Verbose notes (save details for claude-progress.txt)
+- Empty `source_requirement` or `verification_steps`
 
 This keeps the file queryable even with 200+ features.
 

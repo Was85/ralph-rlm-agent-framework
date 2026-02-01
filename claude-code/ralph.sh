@@ -25,6 +25,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROMPTS_DIR="$SCRIPT_DIR/prompts"
+SKILLS_DIR="$SCRIPT_DIR/.claude/skills"
 
 # ══════════════════════════════════════════════════════════════
 # Configuration
@@ -35,6 +36,9 @@ MAX_IMPLEMENT_ITERATIONS=${MAX_IMPLEMENT_ITERATIONS:-50}
 SLEEP_BETWEEN=${SLEEP_BETWEEN:-2}
 COVERAGE_THRESHOLD=${COVERAGE_THRESHOLD:-95}
 VERBOSE=${VERBOSE:-false}
+DEBUG_MODE=${DEBUG_MODE:-false}
+ALLOW_ALL_TOOLS=${ALLOW_ALL_TOOLS:-false}
+STREAM_OUTPUT=${STREAM_OUTPUT:-false}
 LOG_FILE="ralph-debug.log"
 
 # ══════════════════════════════════════════════════════════════
@@ -78,6 +82,16 @@ parse_flags() {
                 ;;
             -v|--verbose)
                 VERBOSE=true
+                ;;
+            --debug)
+                DEBUG_MODE=true
+                VERBOSE=true
+                ;;
+            --dangerously-skip-permissions)
+                ALLOW_ALL_TOOLS=true
+                ;;
+            --stream)
+                STREAM_OUTPUT=true
                 ;;
             -*)
                 print_error "Unknown flag: $1"
@@ -137,12 +151,44 @@ log_debug() {
     fi
 }
 
-# Build Claude CLI flags based on verbose setting
+# Build Claude CLI flags based on tool permissions and verbosity
 get_claude_flags() {
     local flags=""
-    if [[ "$VERBOSE" == "true" ]]; then
-        flags="--verbose"
+
+    if [[ "$ALLOW_ALL_TOOLS" == "true" ]]; then
+        # Full bypass — all tools allowed without permission prompts
+        flags="--dangerously-skip-permissions"
+    else
+        # Explicit allowlist — safe default for autonomous operation
+        flags="$flags --allowedTools"
+        # File operations
+        flags="$flags \"Read\" \"Write\" \"Edit\" \"Glob\" \"Grep\" \"TodoWrite\""
+        # Git
+        flags="$flags \"Bash(git:*)\""
+        # Build tools
+        flags="$flags \"Bash(dotnet:*)\" \"Bash(npm:*)\" \"Bash(node:*)\" \"Bash(python:*)\" \"Bash(pytest:*)\""
+        # Shell utilities needed by implementer
+        flags="$flags \"Bash(jq:*)\" \"Bash(head:*)\" \"Bash(cat:*)\" \"Bash(grep:*)\" \"Bash(find:*)\""
+        flags="$flags \"Bash(ls:*)\" \"Bash(mkdir:*)\" \"Bash(cp:*)\" \"Bash(mv:*)\" \"Bash(wc:*)\" \"Bash(chmod:*)\""
+        # Ralph companion scripts (./ prefix)
+        flags="$flags \"Bash(./:*)\""
     fi
+
+    # Verbosity flags
+    if [[ "$DEBUG_MODE" == "true" ]]; then
+        flags="$flags --debug"
+    elif [[ "$VERBOSE" == "true" ]]; then
+        flags="$flags --verbose"
+    fi
+
+    # Stream JSON output (requires --verbose)
+    if [[ "$STREAM_OUTPUT" == "true" ]]; then
+        if [[ "$flags" != *"--verbose"* ]]; then
+            flags="$flags --verbose"
+        fi
+        flags="$flags --output-format stream-json"
+    fi
+
     echo "$flags"
 }
 
@@ -220,6 +266,7 @@ show_help() {
     echo "  ./ralph.sh <command> [options]"
     echo ""
     echo -e "${BOLD}COMMANDS${NC}"
+    echo "  author      Interactive PRD creation assistant"
     echo "  init        Phase 1: Analyze PRD and create feature_list.json"
     echo "  validate    Phase 2: Validate all PRD requirements are covered (loops)"
     echo "  run         Phase 3: Implement features one by one (loops)"
@@ -233,6 +280,9 @@ show_help() {
     echo "  -c, --coverage-threshold N      Required PRD coverage % (default: 95)"
     echo "  -s, --sleep N                   Seconds between iterations (default: 2)"
     echo "  -v, --verbose                   Show context summary and RLM debug info"
+    echo "  --debug                         Enable Claude Code debug-level tracing (implies --verbose)"
+    echo "  --dangerously-skip-permissions  Full tool access with deny rules (less safe, faster)"
+    echo "  --stream                        Stream Claude Code output as JSON (for CI/automation)"
     echo ""
     echo -e "${BOLD}WORKFLOW${NC}"
     echo ""
@@ -248,9 +298,10 @@ show_help() {
     echo "                                          └─────────────┘"
     echo ""
     echo -e "${BOLD}QUICK START${NC}"
-    echo "  1. Write your requirements in prd.md"
-    echo "  2. Run: ./ralph.sh auto"
-    echo "  3. Go make coffee ☕"
+    echo "  1. Run: ./ralph.sh author    (get help writing your PRD)"
+    echo "  2. Write your requirements in prd.md"
+    echo "  3. Run: ./ralph.sh auto"
+    echo "  4. Go make coffee"
     echo ""
     echo -e "${BOLD}ENVIRONMENT VARIABLES${NC}"
     echo "  MAX_VALIDATE_ITERATIONS   Max validation loops (default: 10)"
@@ -259,6 +310,7 @@ show_help() {
     echo "  SLEEP_BETWEEN             Seconds between iterations (default: 2)"
     echo ""
     echo -e "${BOLD}EXAMPLES${NC}"
+    echo "  ./ralph.sh author                        # Get help writing your PRD"
     echo "  ./ralph.sh auto                          # Run everything"
     echo "  ./ralph.sh auto -v                       # Run with context summary"
     echo "  ./ralph.sh init                          # Just create features"
@@ -268,12 +320,19 @@ show_help() {
     echo "  ./ralph.sh run --max-iterations=100      # Run with max 100 iterations"
     echo "  ./ralph.sh validate -c 90                # Validate with 90% coverage threshold"
     echo "  ./ralph.sh run -v                        # Run with verbose/debug output"
+    echo "  ./ralph.sh run --dangerously-skip-permissions               # Full tool access (less safe)"
+    echo "  ./ralph.sh auto --dangerously-skip-permissions --debug      # Full access + debug tracing"
     echo ""
     echo -e "${BOLD}FILES${NC}"
     echo "  prd.md                Your requirements (input)"
     echo "  feature_list.json     Generated features with status"
     echo "  validation-state.json Validation coverage tracking"
     echo "  claude-progress.txt   Detailed iteration log"
+    echo ""
+    echo -e "${BOLD}FRAMEWORK DIRECTORIES${NC}"
+    echo "  .claude/skills/       Auto-discovered skill definitions and scripts"
+    echo "  .claude/skills/ralph/ Core Ralph loop skills"
+    echo "  .claude/rules/        Auto-loaded coding rules (by file pattern)"
     echo ""
     echo -e "${BOLD}LEARN MORE${NC}"
     echo "  Original technique: https://ghuntley.com/ralph/"
@@ -305,6 +364,17 @@ preflight_check() {
         exit 1
     fi
     print_success "Claude Code CLI found"
+
+    # Check: jq (required for feature_list.json queries)
+    if ! command -v jq &> /dev/null; then
+        print_error "jq not found! Required for parsing feature_list.json."
+        echo "       Install:"
+        echo "         macOS:   brew install jq"
+        echo "         Ubuntu:  sudo apt install jq"
+        echo "         Windows: winget install jqlang.jq"
+        exit 1
+    fi
+    print_success "jq found"
     
     # Phase-specific checks
     case $phase in
@@ -371,6 +441,78 @@ preflight_check() {
 }
 
 # ══════════════════════════════════════════════════════════════
+# PRD Author (Interactive)
+# ══════════════════════════════════════════════════════════════
+
+run_author() {
+    print_phase "PRD AUTHOR"
+    echo "Interactive PRD creation assistant..."
+    echo ""
+
+    # Check: Git repository
+    if [ ! -d ".git" ]; then
+        print_error "Not a git repository! Initialize with: git init"
+        exit 1
+    fi
+
+    # Check: Claude Code CLI
+    if ! command -v claude &> /dev/null; then
+        print_error "Claude Code CLI not found!"
+        echo "       Install: npm install -g @anthropic-ai/claude-code"
+        exit 1
+    fi
+
+    # Check: PRD Author skill
+    local SKILL_FILE="$SKILLS_DIR/ralph/prd-author/SKILL.md"
+    if [ ! -f "$SKILL_FILE" ]; then
+        print_error "PRD Author skill not found at: $SKILL_FILE"
+        exit 1
+    fi
+    print_success "PRD Author skill found"
+
+    # Check: PRD template
+    local TEMPLATE_FILE="$SCRIPT_DIR/templates/prd.md"
+    if [ -f "$TEMPLATE_FILE" ]; then
+        print_success "PRD template found"
+    fi
+
+    echo ""
+    print_info "Running PRD Author assistant..."
+    print_info "This will guide you through creating a high-quality prd.md"
+    echo ""
+
+    # Read skill content, stripping YAML frontmatter if present
+    # (frontmatter starts/ends with --- which claude CLI misinterprets as a flag)
+    local SKILL_CONTENT
+    if head -1 "$SKILL_FILE" | grep -q '^---$'; then
+        SKILL_CONTENT=$(awk 'BEGIN{c=0} /^---$/{c++; next} c>=2{print}' "$SKILL_FILE")
+    else
+        SKILL_CONTENT=$(cat "$SKILL_FILE")
+    fi
+
+    # Use interactive mode (no -p flag) so the user can answer questions
+    claude $(get_claude_flags) "$SKILL_CONTENT
+
+You are helping the user create a prd.md for Ralph-RLM-Framework.
+
+If a prd.md template exists at templates/prd.md, use it as the output structure.
+Guide the user through each phase described above.
+Save the final result as prd.md in the current directory.
+
+Start by asking the user about their project (Phase 1: Project Understanding)."
+
+    if [ -f "prd.md" ]; then
+        print_success "prd.md created successfully!"
+        echo ""
+        echo "Next steps:"
+        echo "  1. Review prd.md"
+        echo "  2. Run: ./ralph.sh auto"
+    else
+        print_warning "prd.md was not created. You can create it manually using templates/prd.md"
+    fi
+}
+
+# ══════════════════════════════════════════════════════════════
 # Phase 1: Initialize
 # ══════════════════════════════════════════════════════════════
 
@@ -393,8 +535,8 @@ run_init() {
     
     claude $(get_claude_flags) -p "$(cat "$PROMPTS_DIR/initializer.md")
 
-Read the project requirements from: prd.md"
-    
+Read the project requirements from: prd.md" || true
+
     if [ -f "feature_list.json" ]; then
         FEATURE_COUNT=$(jq '.features | length' feature_list.json 2>/dev/null || echo "0")
         echo ""
@@ -447,8 +589,8 @@ run_validate() {
 Read these files from the current directory:
 - prd.md (the original PRD)
 - feature_list.json (current features)
-- validation-state.json (validation state)"
-        
+- validation-state.json (validation state)" || true
+
         # Check for completion
         if [ -f "validation-state.json" ]; then
             COVERAGE=$(jq -r '.coverage_percent // 0' validation-state.json)
@@ -502,59 +644,96 @@ run_implement() {
     git stash push -m "ralph-pre-implement-$(date +%s)" --include-untracked 2>/dev/null || true
     
     ITERATION=0
-    
+
+    # Pre-loop check: are there any features to work on?
+    REMAINING=$(jq '[.features[] | select(.status == "pending" or .status == "in_progress")] | length' feature_list.json 2>/dev/null || echo "0")
+    if [ "$REMAINING" -eq 0 ]; then
+        BLOCKED_COUNT=$(jq '[.features[] | select(.status == "blocked")] | length' feature_list.json 2>/dev/null || echo "0")
+        if [ "$BLOCKED_COUNT" -gt 0 ]; then
+            print_warning "No pending features, but $BLOCKED_COUNT feature(s) are blocked"
+            print_info "Fix blocked features in feature_list.json and re-run"
+            return 2
+        else
+            print_success "All features are already complete! Nothing to do."
+            return 0
+        fi
+    fi
+    print_info "$REMAINING feature(s) remaining to implement"
+
     while [ $ITERATION -lt $MAX_IMPLEMENT_ITERATIONS ]; do
         echo ""
         echo -e "${CYAN}━━━ Implementation Iteration $((ITERATION + 1)) of $MAX_IMPLEMENT_ITERATIONS ━━━${NC}"
         echo -e "${CYAN}    $(date '+%Y-%m-%d %H:%M:%S')${NC}"
         log_debug "Implementation iteration $((ITERATION + 1)) starting"
         echo ""
-        
-        # Run implementer
-        claude $(get_claude_flags) -p "$(cat "$PROMPTS_DIR/implementer.md")"
-        
-        EXIT_CODE=$?
-        
+
+        # Windows NUL file cleanup: Claude Code on Windows can create a literal 'nul' file
+        # (Windows reserved device name) which breaks git operations. Remove it if present.
+        if [ -f "nul" ]; then
+            rm -f "nul" 2>/dev/null || true
+            log_debug "Removed stale 'nul' file (Windows Claude Code bug)"
+        fi
+
+        # Run implementer (capture exit code without triggering set -e)
+        EXIT_CODE=0
+        claude $(get_claude_flags) -p "$(cat "$PROMPTS_DIR/implementer.md")" || EXIT_CODE=$?
+
         if [ $EXIT_CODE -ne 0 ]; then
             print_warning "Claude exited with code $EXIT_CODE"
             log_debug "Claude exited with code $EXIT_CODE"
         fi
-        
-        # Check for completion
-        if grep -q "ALL_FEATURES_COMPLETE" claude-progress.txt 2>/dev/null; then
+
+        # Data-driven completion check: query feature_list.json directly
+        REMAINING=$(jq '[.features[] | select(.status == "pending" or .status == "in_progress")] | length' feature_list.json 2>/dev/null || echo "-1")
+        BLOCKED_COUNT=$(jq '[.features[] | select(.status == "blocked")] | length' feature_list.json 2>/dev/null || echo "0")
+        TOTAL=$(jq '.features | length' feature_list.json 2>/dev/null || echo "0")
+        COMPLETE=$(jq '[.features[] | select(.status == "complete")] | length' feature_list.json 2>/dev/null || echo "0")
+
+        log_debug "Status: $COMPLETE/$TOTAL complete, $REMAINING remaining, $BLOCKED_COUNT blocked"
+
+        # Sanity check: if total is 0, feature_list.json is corrupted
+        if [ "$TOTAL" -eq 0 ]; then
+            print_warning "feature_list.json appears corrupted (0 features found). Stopping loop."
+            print_info "Check feature_list.json for valid JSON structure."
+            return 1
+        fi
+
+        # All features complete (none pending or in_progress, none blocked)
+        if [ "$REMAINING" -eq 0 ] && [ "$BLOCKED_COUNT" -eq 0 ]; then
             echo ""
             echo -e "${GREEN}╔══════════════════════════════════════════════════════════════╗${NC}"
-            echo -e "${GREEN}║${NC}  🎉 ${BOLD}ALL FEATURES COMPLETE!${NC}                                   ${GREEN}║${NC}"
+            echo -e "${GREEN}║${NC}  ${BOLD}ALL FEATURES COMPLETE!${NC}  ($COMPLETE/$TOTAL)                       ${GREEN}║${NC}"
             echo -e "${GREEN}║${NC}     Total iterations: $((ITERATION + 1))                                  ${GREEN}║${NC}"
             echo -e "${GREEN}╚══════════════════════════════════════════════════════════════╝${NC}"
             echo ""
             log_debug "ALL FEATURES COMPLETE after $((ITERATION + 1)) iterations"
             return 0
         fi
-        
-        # Check for blocked
-        if grep -q "BLOCKED_NEEDS_HUMAN" claude-progress.txt 2>/dev/null; then
+
+        # No work left but some features are blocked
+        if [ "$REMAINING" -eq 0 ] && [ "$BLOCKED_COUNT" -gt 0 ]; then
             echo ""
             echo -e "${YELLOW}╔══════════════════════════════════════════════════════════════╗${NC}"
-            echo -e "${YELLOW}║${NC}  ⚠️  ${BOLD}BLOCKED - Human intervention needed${NC}                      ${YELLOW}║${NC}"
-            echo -e "${YELLOW}║${NC}     Check claude-progress.txt for details                     ${YELLOW}║${NC}"
+            echo -e "${YELLOW}║${NC}  ${BOLD}BLOCKED - Human intervention needed${NC}                         ${YELLOW}║${NC}"
+            echo -e "${YELLOW}║${NC}     $COMPLETE/$TOTAL complete, $BLOCKED_COUNT blocked                              ${YELLOW}║${NC}"
+            echo -e "${YELLOW}║${NC}     Check feature_list.json for blocked features                ${YELLOW}║${NC}"
             echo -e "${YELLOW}╚══════════════════════════════════════════════════════════════╝${NC}"
             echo ""
-            log_debug "BLOCKED at iteration $((ITERATION + 1))"
+            log_debug "BLOCKED at iteration $((ITERATION + 1)): $BLOCKED_COUNT features blocked"
             return 2
         fi
-        
+
         ITERATION=$((ITERATION + 1))
-        
+
         if [ $ITERATION -lt $MAX_IMPLEMENT_ITERATIONS ]; then
-            print_info "Iteration complete. Next in ${SLEEP_BETWEEN}s... (Ctrl+C to stop)"
+            print_info "Progress: $COMPLETE/$TOTAL complete, $REMAINING remaining. Next in ${SLEEP_BETWEEN}s... (Ctrl+C to stop)"
             sleep $SLEEP_BETWEEN
         fi
     done
-    
+
     echo ""
     print_warning "Max iterations reached ($MAX_IMPLEMENT_ITERATIONS)"
-    print_info "Check claude-progress.txt for current state"
+    print_info "Progress: $COMPLETE/$TOTAL complete, $REMAINING remaining"
     return 1
 }
 
@@ -666,14 +845,6 @@ show_status() {
     if [ -f "claude-progress.txt" ]; then
         PROGRESS_LINES=$(wc -l < claude-progress.txt)
         print_success "claude-progress.txt exists ($PROGRESS_LINES lines)"
-        
-        # Check for completion signals
-        if grep -q "ALL_FEATURES_COMPLETE" claude-progress.txt 2>/dev/null; then
-            echo -e "    ${GREEN}★ ALL_FEATURES_COMPLETE signal found${NC}"
-        fi
-        if grep -q "BLOCKED_NEEDS_HUMAN" claude-progress.txt 2>/dev/null; then
-            echo -e "    ${RED}★ BLOCKED_NEEDS_HUMAN signal found${NC}"
-        fi
     else
         print_warning "claude-progress.txt not found"
     fi
@@ -688,10 +859,12 @@ show_status() {
         echo "  → Run: ./ralph.sh init"
     elif [ ! -f "validation-state.json" ] || [ "$(jq -r '.status' validation-state.json 2>/dev/null)" != "complete" ]; then
         echo "  → Run: ./ralph.sh validate"
-    elif [ "$COMPLETE" -lt "$TOTAL" ] 2>/dev/null; then
+    elif [ "$BLOCKED" -gt 0 ] 2>/dev/null && [ "$PENDING" -eq 0 ] 2>/dev/null && [ "$IN_PROGRESS" -eq 0 ] 2>/dev/null; then
+        echo "  → $BLOCKED feature(s) blocked. Fix in feature_list.json, then: ./ralph.sh run"
+    elif [ "$PENDING" -gt 0 ] 2>/dev/null || [ "$IN_PROGRESS" -gt 0 ] 2>/dev/null; then
         echo "  → Run: ./ralph.sh run"
     else
-        echo "  → All done! 🎉"
+        echo "  → All done!"
     fi
     
     echo ""
@@ -706,6 +879,9 @@ shift 2>/dev/null || true
 parse_flags "$@"
 
 case $COMMAND in
+    author)
+        run_author
+        ;;
     init)
         run_init
         ;;

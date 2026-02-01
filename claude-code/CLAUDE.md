@@ -51,11 +51,29 @@ project/
 ├── feature_list.json      # Features with status tracking
 ├── validation-state.json  # Validation coverage tracking
 ├── claude-progress.txt    # Iteration log with failure details
+├── CLAUDE.md              # This file
 ├── prompts/
 │   ├── initializer.md     # Phase 1 instructions
 │   ├── validator.md       # Phase 2 instructions
 │   └── implementer.md     # Phase 3 instructions
-└── CLAUDE.md              # This file
+├── .claude/
+│   ├── skills/            # Auto-discovered skills (see below)
+│   │   ├── ralph/         # Core Ralph loop skills
+│   │   │   ├── get-next-feature/
+│   │   │   ├── update-feature-status/
+│   │   │   ├── increment-feature-attempts/
+│   │   │   ├── get-feature-stats/
+│   │   │   ├── prd-author/        # User-invocable as /prd-author
+│   │   │   └── validate-prd/
+│   │   ├── test-driven-development/  # TDD Red-Green-Refactor
+│   │   ├── docs-lookup/
+│   │   ├── nuget-manager/
+│   │   └── get-branch-name/
+│   └── rules/             # Auto-loaded coding rules (see below)
+│       ├── csharp.md
+│       └── playwright-dotnet.md
+└── templates/
+    └── prd-template.md    # PRD template for /prd-author
 ```
 
 ---
@@ -92,6 +110,58 @@ Detailed log of each iteration:
 
 ---
 
+## Skills (`.claude/skills/`)
+
+Skills are **auto-discovered** by Claude Code from `.claude/skills/`. Each skill has a `SKILL.md` with YAML frontmatter defining `name`, `description`, and `user-invocable`.
+
+### Core Ralph Skills (`ralph/`)
+These are used internally by the framework agents during the init/validate/implement loop:
+- **get-next-feature** — Find the next pending or in-progress feature
+- **update-feature-status** — Change a feature's status (pending → in_progress → complete)
+- **increment-feature-attempts** — Track failed attempts with error messages
+- **get-feature-stats** — Get project stats overview (counts by status)
+
+### User-Invocable Skills
+- **prd-author** (`/prd-author`) — Interactive PRD authoring assistant. Guides you through creating a structured `prd.md` from your project idea.
+
+### Utility Skills
+- **test-driven-development** — TDD Red-Green-Refactor enforcement (used by Implementer agent for all feature implementations)
+- **validate-prd** — PRD quality checklist for the Validator agent
+- **docs-lookup** — API verification guidelines (use when working with unfamiliar APIs)
+- **nuget-manager** — Safe NuGet package management for .NET projects
+- **get-branch-name** — Generate conventional branch names from feature descriptions
+
+### Companion Scripts
+Core Ralph skills include `.sh` scripts that can be called directly from bash:
+```bash
+.claude/skills/ralph/get-next-feature/get-next-feature.sh
+.claude/skills/ralph/update-feature-status/update-feature-status.sh <feature_id> <status>
+.claude/skills/ralph/increment-feature-attempts/increment-feature-attempts.sh <feature_id> "<error>"
+.claude/skills/ralph/get-feature-stats/get-feature-stats.sh
+```
+
+---
+
+## Rules (`.claude/rules/`)
+
+Rules are **auto-loaded** by Claude Code based on file path patterns. When working with files matching a rule's `paths:` glob, the rule's coding standards are automatically active.
+
+| Rule | Applies To | Purpose |
+|------|-----------|---------|
+| `csharp.md` | `**/*.cs` | C# coding conventions |
+| `playwright-dotnet.md` | `**/*Tests.cs`, `**/*Test.cs` | Playwright .NET test patterns |
+
+To add custom rules, create a new `.md` file in `.claude/rules/` with YAML frontmatter:
+```yaml
+---
+paths:
+  - "**/*.your-pattern"
+---
+Your coding standards here...
+```
+
+---
+
 ## Running the Framework
 
 ```bash
@@ -99,6 +169,7 @@ Detailed log of each iteration:
 ./ralph.sh auto
 
 # Or step by step
+./ralph.sh author     # PRD authoring assistant
 ./ralph.sh init       # Phase 1: PRD → features
 ./ralph.sh validate   # Phase 2: Ensure coverage
 ./ralph.sh run        # Phase 3: Implement
@@ -109,16 +180,25 @@ Detailed log of each iteration:
 
 ---
 
-## Completion Signals
+## Completion Detection
+
+Completion is **data-driven** — the loop queries `feature_list.json` directly after each iteration. No magic strings or signal files.
 
 ### Validation Phase
 - `"status": "complete"` in validation-state.json → Coverage met, proceed to implementation
 - `"status": "blocked"` → Human review needed (ambiguous requirements)
 
 ### Implementation Phase
-- `ALL_FEATURES_COMPLETE` in progress file → All done, loop exits successfully
-- `BLOCKED_NEEDS_HUMAN` in progress file → Feature stuck, needs human help
-- Max iterations reached → Loop exits, check progress
+The loop checks feature statuses in `feature_list.json` after each iteration:
+- All features `"complete"` (none pending/in_progress/blocked) → Loop exits successfully
+- No pending/in_progress but some `"blocked"` → Loop exits, human intervention needed
+- Still pending/in_progress features → Loop continues to next iteration
+- Max iterations reached → Loop exits, check feature_list.json for progress
+
+### Adding Features Mid-Project
+Because completion is derived from the data, you can add new features at any time:
+1. Add new entries to `feature_list.json` with `"status": "pending"`
+2. Run `./ralph.sh run` — the loop detects remaining work and continues
 
 ---
 

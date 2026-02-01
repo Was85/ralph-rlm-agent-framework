@@ -6,24 +6,54 @@ Your job: Implement ONE feature at a time until all features are complete.
 
 ---
 
-## STEP 1: ORIENT (Always Do First)
+## AVAILABLE SKILLS
 
-**DO NOT read entire feature_list.json** - it may be too large. Use targeted queries:
+The framework provides modular skills in `skills/`. Use them for consistent state management:
+
+### Core Ralph Skills (`skills/ralph/`)
+- **`get-next-feature`** - Find the next feature to work on (script: `skills/ralph/get-next-feature/get-next-feature.ps1`)
+- **`update-feature-status`** - Change feature status (script: `skills/ralph/update-feature-status/update-feature-status.ps1`)
+- **`increment-feature-attempts`** - Track failed attempts (script: `skills/ralph/increment-feature-attempts/increment-feature-attempts.ps1`)
+- **`get-feature-stats`** - Get project stats overview (script: `skills/ralph/get-feature-stats/get-feature-stats.ps1`)
+
+### Utility Skills (`skills/`)
+- **`test-driven-development/SKILL.md`** - TDD Red-Green-Refactor enforcement (read this — **follow this for all feature implementations**)
+- **`docs-lookup/SKILL.md`** - API verification guidelines (read when using unfamiliar APIs)
+- **`nuget-manager/SKILL.md`** - Safe NuGet package management (read for .NET projects)
+
+**CRITICAL: ALWAYS use the `.ps1` companion scripts to update `feature_list.json`.** NEVER edit `feature_list.json` directly with inline JSON manipulation, `ConvertTo-Json`, `jq`, or any other method. Direct manipulation has caused data corruption (wiping all features). The scripts handle atomic reads/writes safely.
+
+---
+
+## STEP 0: LOAD CODEBASE PATTERNS (Always Do First)
+
+### Read Codebase Patterns
 
 ```bash
-# 1. Get project stats (small)
-jq '{project: .project, stats: .stats, config: .config}' feature_list.json
+# Read the Codebase Patterns section from progress file (most important context)
+head -30 copilot-progress.txt
+```
 
-# 2. Find current in-progress feature (if any)
-jq '.features[] | select(.status == "in_progress")' feature_list.json
+This section contains reusable patterns, coding conventions, and learnings from previous iterations. **Read it before doing anything else** — it tells you how to write code consistently with what's already been implemented.
 
-# 3. If none in-progress, get next pending feature
-jq '[.features[] | select(.status == "pending")] | first' feature_list.json
+### Domain-Specific Instructions (Auto-Loaded by Copilot)
 
-# 4. Read recent progress
-tail -50 claude-progress.txt
+Domain-specific coding standards are auto-loaded from `.github/instructions/` based on `applyTo:` file patterns (e.g., `csharp.instructions.md` applies to `**/*.cs`). These are automatically active -- no manual loading required.
 
-# 5. Check git state
+---
+
+## STEP 1: ORIENT
+
+**DO NOT read entire feature_list.json** - it may be too large. Use targeted queries or skills:
+
+```powershell
+# 1. Get project stats (use skill script)
+./skills/ralph/get-feature-stats/get-feature-stats.ps1
+
+# 2. Find next feature to work on (use skill script)
+./skills/ralph/get-next-feature/get-next-feature.ps1
+
+# 3. Check git state
 git log --oneline -5
 git status
 ```
@@ -32,19 +62,23 @@ Understand:
 - Which feature is `"status": "in_progress"`?
 - What was the `last_error` if any?
 - What did previous attempts try?
+- What patterns should you follow (from Codebase Patterns)?
 
 ### If You Need to Find a Specific Feature
 
-```bash
+```powershell
 # Search by ID
-jq '.features[] | select(.id == "F042")' feature_list.json
+$json = Get-Content feature_list.json | ConvertFrom-Json
+$json.features | Where-Object { $_.id -eq "F042" }
 
 # Search by keyword in description
-jq '.features[] | select(.description | test("auth"; "i"))' feature_list.json
+$json.features | Where-Object { $_.description -match "auth" }
 
 # Count features by status
-jq '.features | group_by(.status) | map({status: .[0].status, count: length})' feature_list.json
+$json.features | Group-Object status | Select-Object Name, Count
 ```
+
+> **Note:** These read-only queries are safe. But for WRITES (status changes, attempt tracking), ALWAYS use the companion `.ps1` scripts.
 
 ---
 
@@ -98,7 +132,7 @@ Before writing code, note:
 
 ### If a feature has `"status": "in_progress"`:
 - This feature FAILED in a previous iteration
-- Read `last_error` and attempt history in claude-progress.txt
+- Read `last_error` and attempt history in copilot-progress.txt
 - **Search codebase for clues** before trying again
 - Try a DIFFERENT approach - don't repeat the same mistake
 - Continue working on THIS feature
@@ -110,23 +144,25 @@ Before writing code, note:
 - Start implementation
 
 ### If all features are complete:
-- Write `ALL_FEATURES_COMPLETE` to claude-progress.txt
-- Exit
+- Log completion in copilot-progress.txt
+- Exit — the loop detects completion automatically from feature_list.json
 
 ### If a feature has `"attempts" >= 5`:
 - Mark it as `"status": "blocked"`
-- Write `BLOCKED_NEEDS_HUMAN` to claude-progress.txt
-- Move to next feature OR exit if all blocked
+- Log the block reason in copilot-progress.txt
+- Move to next pending feature, or exit if none remain
 
 ---
 
 ## STEP 4: IMPLEMENT
 
-Work on ONE feature only:
+Work on ONE feature only, following the **TDD Red-Green-Refactor cycle** (read `skills/test-driven-development/SKILL.md`):
 1. **Search for existing patterns first**
-2. Write the code following those patterns
-3. Make it compile/build
-4. Write tests if needed
+2. **RED**: Write a failing test for the next behavior
+3. **VERIFY RED**: Run the test — confirm it fails for the right reason
+4. **GREEN**: Write the simplest code to make the test pass
+5. **VERIFY GREEN**: Run all tests — confirm everything passes
+6. **REPEAT** for each behavior in the acceptance criteria
 
 ### Implementation Strategy for Large Codebases
 
@@ -170,14 +206,11 @@ pytest
 
 ## STEP 6A: IF TESTS PASS ✓
 
-1. Update `feature_list.json`:
-```json
-{
-  "status": "complete",
-  "attempts": N,
-  "last_error": null
-}
+1. Update `feature_list.json` (**MUST use companion script**):
+```powershell
+./skills/ralph/update-feature-status/update-feature-status.ps1 -FeatureId FXXX -Status complete
 ```
+> **NEVER** edit feature_list.json directly. The script handles atomic read/write safely.
 
 2. Git commit:
 ```bash
@@ -191,7 +224,17 @@ git commit -m "feat: [FEATURE_ID] - [description]
 Feature complete. [N] of [Total] done."
 ```
 
-3. Update `claude-progress.txt`:
+3. **Update Codebase Patterns** (top of `copilot-progress.txt`):
+
+If you discovered any new reusable patterns, conventions, or important learnings during this implementation, **add them to the Codebase Patterns section** at the top of the progress file. This helps future iterations stay consistent.
+
+```markdown
+## Codebase Patterns
+- **[NEW] API Response Format:** All endpoints return {data, error, status} wrapper
+- **[NEW] Test Naming:** Tests use MethodName_Scenario_ExpectedResult format
+```
+
+4. Append to the **Iteration Log** in `copilot-progress.txt`:
 ```
 ## [FEATURE_ID] - COMPLETE ✓
 **Timestamp:** YYYY-MM-DD HH:MM
@@ -200,9 +243,10 @@ Feature complete. [N] of [Total] done."
 **Pattern followed:** [existing file used as reference]
 **Tests:** All passing
 **Commit:** [hash]
+**Learnings:** [any patterns or gotchas discovered]
 ```
 
-4. Move to next feature OR write `ALL_FEATURES_COMPLETE` if done
+5. Exit — the loop will pick up the next feature or detect completion automatically
 
 ---
 
@@ -217,14 +261,11 @@ grep -rn "error_message_from_test" --include="*.cs" | head -5
 grep -rn "similar_function" --include="*.cs" | head -5
 ```
 
-2. Update `feature_list.json`:
-```json
-{
-  "status": "in_progress",
-  "attempts": N+1,
-  "last_error": "Actual error message from test output"
-}
+2. Update `feature_list.json` (**MUST use companion script**):
+```powershell
+./skills/ralph/increment-feature-attempts/increment-feature-attempts.ps1 -FeatureId FXXX -ErrorMessage "error message"
 ```
+> **NEVER** edit feature_list.json directly. The script handles atomic read/write safely.
 
 3. Git commit (save progress):
 ```bash
@@ -232,7 +273,17 @@ git add .
 git commit -m "wip: [FEATURE_ID] attempt N - [brief error]"
 ```
 
-4. Update `claude-progress.txt`:
+4. **Update Codebase Patterns** if you discovered anti-patterns:
+
+If you learned something that future iterations should avoid, add it:
+
+```markdown
+## Codebase Patterns
+- **[AVOID] Don't use X pattern because Y**
+- **[NOTE] Library Z requires config in Program.cs before use**
+```
+
+5. Append to the **Iteration Log** in `copilot-progress.txt`:
 ```
 ## [FEATURE_ID] - ATTEMPT N FAILED
 **Timestamp:** YYYY-MM-DD HH:MM
@@ -243,9 +294,9 @@ git commit -m "wip: [FEATURE_ID] attempt N - [brief error]"
 **Commit:** [hash]
 ```
 
-5. **EXIT** - Let the loop restart with fresh context
+6. **EXIT** - Let the loop restart with fresh context
 
-The next iteration will see your failure notes and try a different approach.
+The next iteration will see your failure notes and Codebase Patterns, and try a different approach.
 
 ---
 
@@ -258,10 +309,12 @@ The next iteration will see your failure notes and try a different approach.
 - ✅ Always run tests before declaring success
 - ✅ Log failures with detailed error messages
 - ✅ Commit after each iteration (pass or fail)
-- ✅ Update both feature_list.json AND claude-progress.txt
+- ✅ Update both feature_list.json AND copilot-progress.txt
 - ✅ Try different approaches after failures
 
 ### DON'T:
+- ❌ **NEVER edit feature_list.json directly** — always use companion `.ps1` scripts (direct manipulation causes data loss)
+- ❌ **NEVER use jq** — this is a PowerShell environment, use the `.ps1` scripts
 - ❌ Try to read entire codebase at once
 - ❌ Mark features complete without passing tests
 - ❌ Work on multiple features at once
@@ -277,7 +330,7 @@ The next iteration will see your failure notes and try a different approach.
 
 When you fail:
 1. Your error is logged in `feature_list.json` → `last_error`
-2. Your attempt is logged in `claude-progress.txt`
+2. Your attempt is logged in `copilot-progress.txt`
 3. **Search the codebase for clues**
 4. Next iteration sees this and tries something different
 

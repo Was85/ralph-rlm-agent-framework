@@ -8,13 +8,31 @@ You run in a LOOP until coverage reaches the threshold (typically 95%+).
 
 ## YOUR JOB
 
-1. Extract ALL requirements from the PRD
-2. **Explore the codebase** to find what's already implemented
-3. Map each requirement to existing features
-4. Find GAPS (requirements not covered)
-5. Add missing features to close gaps
-6. Update validation-state.json with coverage %
-7. EXIT - Loop restarts and re-checks
+1. **Load domain-specific instructions** (if any exist)
+2. Extract ALL requirements from the PRD
+3. **Explore the codebase** to find what's already implemented
+4. Map each requirement to existing features
+5. Find GAPS (requirements not covered)
+6. **Check feature sizing** (split oversized features)
+7. Add missing features to close gaps
+8. Update validation-state.json with coverage %
+9. EXIT - Loop restarts and re-checks
+
+---
+
+## AVAILABLE SKILLS
+
+Skills are auto-discovered from `.claude/skills/`. Key skills for validation:
+
+- **`ralph-get-feature-stats`** - Get project stats (script: `.claude/skills/ralph/get-feature-stats/get-feature-stats.sh`)
+- **`ralph-validate-prd`** - PRD quality checklist (read `.claude/skills/ralph/validate-prd/SKILL.md`)
+- **`docs-lookup`** - API verification guidelines (read `.claude/skills/docs-lookup/SKILL.md`)
+
+---
+
+## STEP -1: LOAD INSTRUCTIONS (Auto-Loaded)
+
+Domain-specific development instructions are auto-loaded from `.claude/rules/` based on file path patterns (e.g., `csharp.md` applies to `**/*.cs`). These are automatically active when working with matching file types -- no manual loading required. Be aware of their conventions when validating feature coverage.
 
 ---
 
@@ -166,6 +184,31 @@ grep -rn "session\|timeout\|expir" --include="*.cs" --include="*.py" | head -10
 - Edge cases not explicit
 - Security requirements implied but not captured
 - Performance/scalability requirements
+
+---
+
+## STEP 3.5: CHECK FEATURE SIZING
+
+Review existing features for sizing issues. A feature is **too large** if:
+- It would touch more than **4 files**
+- It involves more than **2 concepts**
+- It can't be explained in **2-3 sentences**
+- Its description is vague (e.g., "Add authentication", "Build dashboard")
+
+**For oversized features, split them:**
+
+```
+BEFORE: F015 - "Add user authentication"
+AFTER:
+  F015 - "Create User model with email and password hash fields"
+  F015a - "Add password hashing service with BCrypt"
+  F015b - "Create login API endpoint that validates credentials"
+  F015c - "Create registration API endpoint"
+  F015d - "Add JWT token generation on successful login"
+  F015e - "Add JWT validation middleware for protected routes"
+```
+
+When splitting, update the original feature's status and add new features with sequential IDs.
 
 ---
 

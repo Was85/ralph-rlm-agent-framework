@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(powershell -Command:*)",
+      "Bash(if [ -f \"C:/Temp/ralph-test-2/feature_list.json\" ])",
+      "Bash(then cat \"C:/Temp/ralph-test-2/feature_list.json\")",
+      "Bash(else echo \"FILE NOT FOUND\")",
+      "Bash(fi)"
+    ]
+  }
+}

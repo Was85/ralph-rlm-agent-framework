@@ -235,6 +235,28 @@ How do we know we're done?
 
 <!--
 ═══════════════════════════════════════════════════════════════════════════════
+FEATURE SIZING GUIDE
+
+Ralph decomposes this PRD into atomic features. To help the Initializer
+create right-sized features, structure your requirements so each one maps
+to a single implementation task:
+
+RIGHT-SIZED REQUIREMENTS (become one feature each):
+  ✅ "The system must create a User model with email and password fields"
+  ✅ "The login endpoint must return a JWT token on valid credentials"
+  ✅ "Invalid login attempts must return a 401 error with message"
+
+TOO-LARGE REQUIREMENTS (will need splitting):
+  ❌ "The system must have user authentication" (too broad)
+  ❌ "Build a dashboard" (too vague)
+  ❌ "Add search functionality" (multiple concerns)
+
+SIZING HEURISTIC:
+  - Each requirement should produce a feature touching 2-4 files max
+  - Each requirement should describe ONE testable behavior
+  - If you can't explain it in 2-3 sentences, break it down further
+
+═══════════════════════════════════════════════════════════════════════════════
 CHECKLIST BEFORE RUNNING RALPH:
 
 [ ] Every requirement has "must", "shall", "will", or "should"
@@ -244,12 +266,15 @@ CHECKLIST BEFORE RUNNING RALPH:
 [ ] NFRs (performance, security) are specified
 [ ] External integrations are documented
 [ ] Out of scope items are listed
+[ ] Requirements are right-sized (not too broad or vague)
 
 RLM KEYWORDS THE AI SEARCHES FOR:
 - "must" / "shall" / "will" / "should" → Requirements
 - "error" / "fail" / "invalid" → Error handling
 - "performance" / "security" / "scale" → NFRs
 - "## " → Section headings
+
+TIP: Run ./ralph.sh author to get help writing a high-quality PRD!
 
 The clearer your PRD, the better the features!
 ═══════════════════════════════════════════════════════════════════════════════
