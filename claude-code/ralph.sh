@@ -156,6 +156,10 @@ get_claude_flags() {
         flags="--verbose"
     fi
     if [[ "$STREAM_OUTPUT" == "true" ]]; then
+        # stream-json requires --verbose explicitly (--debug alone is not enough)
+        if [[ "$flags" != *"--verbose"* ]]; then
+            flags="$flags --verbose"
+        fi
         flags="$flags --output-format stream-json"
     fi
     echo "$flags"
