@@ -535,8 +535,8 @@ run_init() {
     
     claude $(get_claude_flags) -p "$(cat "$PROMPTS_DIR/initializer.md")
 
-Read the project requirements from: prd.md"
-    
+Read the project requirements from: prd.md" || true
+
     if [ -f "feature_list.json" ]; then
         FEATURE_COUNT=$(jq '.features | length' feature_list.json 2>/dev/null || echo "0")
         echo ""
@@ -589,8 +589,8 @@ run_validate() {
 Read these files from the current directory:
 - prd.md (the original PRD)
 - feature_list.json (current features)
-- validation-state.json (validation state)"
-        
+- validation-state.json (validation state)" || true
+
         # Check for completion
         if [ -f "validation-state.json" ]; then
             COVERAGE=$(jq -r '.coverage_percent // 0' validation-state.json)
@@ -674,10 +674,9 @@ run_implement() {
             log_debug "Removed stale 'nul' file (Windows Claude Code bug)"
         fi
 
-        # Run implementer
-        claude $(get_claude_flags) -p "$(cat "$PROMPTS_DIR/implementer.md")"
-
-        EXIT_CODE=$?
+        # Run implementer (capture exit code without triggering set -e)
+        EXIT_CODE=0
+        claude $(get_claude_flags) -p "$(cat "$PROMPTS_DIR/implementer.md")" || EXIT_CODE=$?
 
         if [ $EXIT_CODE -ne 0 ]; then
             print_warning "Claude exited with code $EXIT_CODE"
