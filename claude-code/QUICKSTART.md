@@ -4,11 +4,28 @@ Get your first Ralph Loop project running in 5 minutes.
 
 ---
 
-## Step 1: Setup (2 minutes)
+## Step 1: Setup
+
+Choose either **PowerShell** (Windows / cross-platform) or **Shell** (macOS / Linux).
+
+### PowerShell
+
+```powershell
+# Copy framework to your project folder
+Copy-Item -Recurse powershell\* my-awesome-project\
+cd my-awesome-project
+
+# Initialize git (required for safety)
+git init
+git add .
+git commit -m "Initial commit with Ralph framework"
+```
+
+### Shell (bash)
 
 ```bash
 # Copy framework to your project folder
-cp -r ralph-framework/* my-awesome-project/
+cp -r shell/* my-awesome-project/
 cd my-awesome-project
 
 # Make the script executable
@@ -54,8 +71,14 @@ Open `prd.md` and replace the template content with YOUR project requirements.
 
 ---
 
-## Step 3: Run! (1 minute)
+## Step 3: Run!
 
+### PowerShell
+```powershell
+.\ralph.ps1 auto
+```
+
+### Shell
 ```bash
 ./ralph.sh auto
 ```
@@ -101,7 +124,8 @@ Working on F001: Project scaffolding...
 ## Check Progress Anytime
 
 ```bash
-./ralph.sh status
+./ralph.sh status       # Shell
+.\ralph.ps1 status      # PowerShell
 ```
 
 Output:
@@ -132,14 +156,14 @@ NEXT ACTION
 
 ## Common Commands
 
-| Command | What It Does |
-|---------|--------------|
-| `./ralph.sh auto` | Run everything automatically |
-| `./ralph.sh init` | Just create features from PRD |
-| `./ralph.sh validate` | Just validate coverage |
-| `./ralph.sh run` | Just implement features |
-| `./ralph.sh status` | Show current state |
-| `./ralph.sh help` | Show all options |
+| Shell | PowerShell | What It Does |
+|-------|------------|--------------|
+| `./ralph.sh auto` | `.\ralph.ps1 auto` | Run everything automatically |
+| `./ralph.sh init` | `.\ralph.ps1 init` | Just create features from PRD |
+| `./ralph.sh validate` | `.\ralph.ps1 validate` | Just validate coverage |
+| `./ralph.sh run` | `.\ralph.ps1 run` | Just implement features |
+| `./ralph.sh status` | `.\ralph.ps1 status` | Show current state |
+| `./ralph.sh help` | `.\ralph.ps1 help` | Show all options |
 
 ---
 
@@ -155,7 +179,7 @@ NEXT ACTION
 
 ## Need Help?
 
-- Run `./ralph.sh help` for command reference
+- Run `./ralph.sh help` or `.\ralph.ps1 help` for command reference
 - Check `README.md` for full documentation
 - Check `claude-progress.txt` for detailed iteration logs
 - Check `examples/pharmacy-bot/` for a complete example

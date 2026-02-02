@@ -683,6 +683,14 @@ run_implement() {
             log_debug "Claude exited with code $EXIT_CODE"
         fi
 
+        # Safety net: recalculate .stats from actual feature statuses
+        # (in case Claude edited feature_list.json directly instead of using companion scripts)
+        jq '.stats.complete = ([.features[] | select(.status == "complete")] | length) |
+            .stats.in_progress = ([.features[] | select(.status == "in_progress")] | length) |
+            .stats.pending = ([.features[] | select(.status == "pending")] | length) |
+            .stats.blocked = ([.features[] | select(.status == "blocked")] | length)' \
+            feature_list.json > feature_list.json.tmp 2>/dev/null && mv feature_list.json.tmp feature_list.json || true
+
         # Data-driven completion check: query feature_list.json directly
         REMAINING=$(jq '[.features[] | select(.status == "pending" or .status == "in_progress")] | length' feature_list.json 2>/dev/null || echo "-1")
         BLOCKED_COUNT=$(jq '[.features[] | select(.status == "blocked")] | length' feature_list.json 2>/dev/null || echo "0")

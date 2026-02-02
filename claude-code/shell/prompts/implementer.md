@@ -44,6 +44,8 @@ Domain-specific coding standards are auto-loaded from `.claude/rules/` based on 
 
 ## STEP 1: ORIENT
 
+> **REMINDER:** You must implement exactly ONE feature this iteration, then exit. Do NOT batch multiple features. Use the companion `.sh` scripts for ALL `feature_list.json` writes — never edit it directly.
+
 **DO NOT read entire feature_list.json** - it may be too large. Use targeted queries or skills:
 
 ```bash
@@ -158,6 +160,8 @@ Before writing code, note:
 
 ## STEP 4: IMPLEMENT
 
+> **ONE feature only.** Do not implement multiple features in this iteration. When this feature is done, commit and exit. The loop handles the next feature.
+
 Work on ONE feature only, following the **TDD Red-Green-Refactor cycle** (read `.claude/skills/test-driven-development/SKILL.md`):
 1. **Search for existing patterns first**
 2. **RED**: Write a failing test for the next behavior
@@ -210,11 +214,12 @@ pytest
 
 1. Update `feature_list.json` (**MUST use companion script**):
 ```bash
+# MANDATORY: Use the script — do NOT edit feature_list.json by hand
 ./.claude/skills/ralph/update-feature-status/update-feature-status.sh FXXX complete
 ```
-> **NEVER** edit feature_list.json directly. The script handles atomic read/write safely.
+> **NEVER** edit feature_list.json directly — not with jq writes, sed, or any other method. The companion script recalculates stats and handles atomic writes. Direct edits have caused stats drift and data corruption in past runs.
 
-2. Git commit:
+2. Git commit (**one feature per commit**):
 ```bash
 git add .
 git commit -m "feat: [FEATURE_ID] - [description]
@@ -226,7 +231,9 @@ git commit -m "feat: [FEATURE_ID] - [description]
 Feature complete. [N] of [Total] done."
 ```
 
-3. **Update Codebase Patterns** (top of `claude-progress.txt`):
+3. **EXIT immediately** — do not continue to the next feature. The loop will start a new iteration for the next feature.
+
+4. **Update Codebase Patterns** (top of `claude-progress.txt`):
 
 If you discovered any new reusable patterns, conventions, or important learnings during this implementation, **add them to the Codebase Patterns section** at the top of the progress file. This helps future iterations stay consistent.
 
@@ -236,7 +243,7 @@ If you discovered any new reusable patterns, conventions, or important learnings
 - **[NEW] Test Naming:** Tests use MethodName_Scenario_ExpectedResult format
 ```
 
-4. Append to the **Iteration Log** in `claude-progress.txt`:
+5. Append to the **Iteration Log** in `claude-progress.txt`:
 ```
 ## [FEATURE_ID] - COMPLETE ✓
 **Timestamp:** YYYY-MM-DD HH:MM
@@ -248,7 +255,7 @@ If you discovered any new reusable patterns, conventions, or important learnings
 **Learnings:** [any patterns or gotchas discovered]
 ```
 
-5. Exit — the loop will pick up the next feature or detect completion automatically
+6. **EXIT NOW** — the loop will pick up the next feature automatically. Do not start working on another feature in this same iteration.
 
 ---
 
@@ -306,7 +313,8 @@ The next iteration will see your failure notes and Codebase Patterns, and try a 
 
 ### DO:
 - ✅ **Search codebase for patterns before implementing**
-- ✅ ONE feature per iteration
+- ✅ **ONE feature per iteration — then commit and EXIT**
+- ✅ **Use companion `.sh` scripts for ALL feature_list.json writes** (they recalculate stats atomically)
 - ✅ Follow existing code patterns and conventions
 - ✅ Always run tests before declaring success
 - ✅ Log failures with detailed error messages
@@ -315,10 +323,11 @@ The next iteration will see your failure notes and Codebase Patterns, and try a 
 - ✅ Try different approaches after failures
 
 ### DON'T:
-- ❌ **NEVER edit feature_list.json directly** — always use companion `.sh` scripts (direct manipulation causes data loss)
+- ❌ **NEVER edit feature_list.json directly** — always use companion `.sh` scripts (direct manipulation causes stats drift and data corruption)
+- ❌ **NEVER implement more than one feature per iteration** — the loop handles sequencing
+- ❌ **NEVER batch multiple features into one commit** — one feature, one commit, one iteration
 - ❌ Try to read entire codebase at once
 - ❌ Mark features complete without passing tests
-- ❌ Work on multiple features at once
 - ❌ Repeat the same failing approach
 - ❌ Ignore existing patterns in the codebase
 - ❌ Delete files
