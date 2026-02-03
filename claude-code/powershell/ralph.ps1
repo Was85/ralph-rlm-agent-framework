@@ -115,30 +115,13 @@ function Write-DebugLog {
     }
 }
 
-# Build Claude CLI flags based on tool permissions and verbosity
+# Build Claude CLI flags
 function Get-ClaudeFlags {
     $flags = @()
 
+    # Full bypass mode
     if ($script:ALLOW_ALL_TOOLS) {
-        # Full bypass - all tools allowed without permission prompts
         $flags += "--dangerously-skip-permissions"
-    }
-    else {
-        # Explicit allowlist - safe default for autonomous operation
-        $flags += "--allowedTools"
-        # File operations
-        $flags += "Read", "Write", "Edit", "Glob", "Grep", "TodoWrite"
-        # Git
-        $flags += "Bash(git:*)"
-        # Build tools
-        $flags += "Bash(dotnet:*)", "Bash(npm:*)", "Bash(node:*)", "Bash(python:*)", "Bash(pytest:*)"
-        # Shell utilities needed by implementer
-        $flags += "Bash(Get-Content:*)", "Bash(Get-ChildItem:*)", "Bash(Get-Date:*)"
-        $flags += "Bash(Get-Location:*)", "Bash(Select-String:*)", "Bash(Test-Path:*)"
-        $flags += "Bash(Set-Content:*)", "Bash(Add-Content:*)", "Bash(New-Item:*)"
-        $flags += "Bash(Copy-Item:*)", "Bash(Move-Item:*)", "Bash(Measure-Object:*)"
-        # PowerShell companion scripts
-        $flags += "Bash(./:*)", "Bash(powershell:*)", "Bash(pwsh:*)"
     }
 
     # Verbosity flags
@@ -149,11 +132,8 @@ function Get-ClaudeFlags {
         $flags += "--verbose"
     }
 
-    # Stream JSON output (requires --verbose)
+    # Stream JSON output
     if ($script:STREAM_OUTPUT) {
-        if ($flags -notcontains "--verbose") {
-            $flags += "--verbose"
-        }
         $flags += "--output-format"
         $flags += "stream-json"
     }
@@ -436,8 +416,22 @@ function Invoke-Claude {
     $flags = Get-ClaudeFlags
 
     Write-DebugLog "Invoking claude with flags: $($flags -join ' ')"
+    Write-DebugLog "Prompt length: $($Prompt.Length) chars"
 
-    & claude @flags -p $Prompt
+    if ([string]::IsNullOrWhiteSpace($Prompt)) {
+        Write-RalphError "Prompt is empty!"
+        return 1
+    }
+
+    # Build full argument list including -p and prompt
+    $allArgs = @()
+    $allArgs += $flags
+    $allArgs += "-p"
+    $allArgs += $Prompt
+
+    Write-DebugLog "Running claude with $($allArgs.Count) args"
+
+    & claude @allArgs
 
     return $LASTEXITCODE
 }
@@ -578,7 +572,12 @@ Start by asking the user about their project (Phase 1: Project Understanding).
 
     # Use interactive mode (no -p flag) so the user can answer questions
     $flags = Get-ClaudeFlags
-    & claude @flags $fullPrompt
+    if ($flags.Count -gt 0) {
+        & claude @flags $fullPrompt
+    }
+    else {
+        & claude $fullPrompt
+    }
 
     if (Test-Path "prd.md") {
         Write-Host ""
@@ -802,7 +801,15 @@ function Start-Implement {
 
         # Build the prompt
         $implPromptPath = Join-Path $PromptsDir "implementer.md"
+        Write-DebugLog "Loading prompt from: $implPromptPath"
+
+        if (-not (Test-Path $implPromptPath)) {
+            Write-RalphError "Prompt file not found: $implPromptPath"
+            return 1
+        }
+
         $implPrompt = Get-Content $implPromptPath -Raw
+        Write-DebugLog "Prompt loaded: $($implPrompt.Length) chars, first 100: $($implPrompt.Substring(0, [Math]::Min(100, $implPrompt.Length)))"
 
         # Run Claude (capture exit code)
         $exitCode = Invoke-Claude -Prompt $implPrompt

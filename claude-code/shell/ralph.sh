@@ -151,27 +151,13 @@ log_debug() {
     fi
 }
 
-# Build Claude CLI flags based on tool permissions and verbosity
+# Build Claude CLI flags
 get_claude_flags() {
     local flags=""
 
+    # Full bypass mode
     if [[ "$ALLOW_ALL_TOOLS" == "true" ]]; then
-        # Full bypass — all tools allowed without permission prompts
         flags="--dangerously-skip-permissions"
-    else
-        # Explicit allowlist — safe default for autonomous operation
-        flags="$flags --allowedTools"
-        # File operations
-        flags="$flags \"Read\" \"Write\" \"Edit\" \"Glob\" \"Grep\" \"TodoWrite\""
-        # Git
-        flags="$flags \"Bash(git:*)\""
-        # Build tools
-        flags="$flags \"Bash(dotnet:*)\" \"Bash(npm:*)\" \"Bash(node:*)\" \"Bash(python:*)\" \"Bash(pytest:*)\""
-        # Shell utilities needed by implementer
-        flags="$flags \"Bash(jq:*)\" \"Bash(head:*)\" \"Bash(cat:*)\" \"Bash(grep:*)\" \"Bash(find:*)\""
-        flags="$flags \"Bash(ls:*)\" \"Bash(mkdir:*)\" \"Bash(cp:*)\" \"Bash(mv:*)\" \"Bash(wc:*)\" \"Bash(chmod:*)\""
-        # Ralph companion scripts (./ prefix)
-        flags="$flags \"Bash(./:*)\""
     fi
 
     # Verbosity flags
@@ -181,11 +167,8 @@ get_claude_flags() {
         flags="$flags --verbose"
     fi
 
-    # Stream JSON output (requires --verbose)
+    # Stream JSON output
     if [[ "$STREAM_OUTPUT" == "true" ]]; then
-        if [[ "$flags" != *"--verbose"* ]]; then
-            flags="$flags --verbose"
-        fi
         flags="$flags --output-format stream-json"
     fi
 
