@@ -8,9 +8,31 @@ An autonomous AI development framework based on [Geoffrey Huntley's Ralph Wiggum
 
 ## Quick Start
 
+Two variants are provided: **Shell** (bash) and **PowerShell**. Choose the one that matches your environment.
+
+### PowerShell (Windows / cross-platform)
+
+```powershell
+# 1. Copy framework to your project
+Copy-Item -Recurse powershell\* your-project\
+cd your-project
+git init  # if not already a repo
+
+# 2. Write your requirements
+Copy-Item templates\prd.md prd.md
+# Edit prd.md with your requirements
+
+# 3. Run everything
+.\ralph.ps1 auto
+
+# 4. Go make coffee
+```
+
+### Shell (macOS / Linux)
+
 ```bash
 # 1. Copy framework to your project
-cp -r ralph-framework/* your-project/
+cp -r shell/* your-project/
 cd your-project
 chmod +x ralph.sh
 git init  # if not already a repo
@@ -22,7 +44,7 @@ vim prd.md  # Edit with your requirements
 # 3. Run everything
 ./ralph.sh auto
 
-# 4. Go make coffee ☕
+# 4. Go make coffee
 ```
 
 ---
@@ -61,7 +83,7 @@ vim prd.md  # Edit with your requirements
 
 ## The Three Phases
 
-### Phase 1: Initialize (`./ralph.sh init`)
+### Phase 1: Initialize (`./ralph.sh init` / `.\ralph.ps1 init`)
 
 - **Input:** Your `prd.md` (requirements)
 - **Output:** `feature_list.json` with 50-200 atomic features
@@ -69,7 +91,7 @@ vim prd.md  # Edit with your requirements
 
 The Initializer Agent reads your PRD and decomposes it into small, testable features.
 
-### Phase 2: Validate (`./ralph.sh validate`)
+### Phase 2: Validate (`./ralph.sh validate` / `.\ralph.ps1 validate`)
 
 - **Input:** `prd.md` + `feature_list.json`
 - **Output:** Updated `feature_list.json` with any missing features
@@ -77,7 +99,7 @@ The Initializer Agent reads your PRD and decomposes it into small, testable feat
 
 The Validator Agent cross-checks your PRD against the features to find gaps. If requirements are missing, it adds features automatically. This prevents requirements from getting lost during decomposition.
 
-### Phase 3: Implement (`./ralph.sh run`)
+### Phase 3: Implement (`./ralph.sh run` / `.\ralph.ps1 run`)
 
 - **Input:** `feature_list.json`
 - **Output:** Working code!
@@ -89,6 +111,7 @@ The Implementer Agent works on one feature at a time. If tests fail, it logs the
 
 ## Commands
 
+### Shell (bash)
 ```bash
 ./ralph.sh init       # Phase 1: Create features from PRD
 ./ralph.sh validate   # Phase 2: Validate PRD coverage (loops)
@@ -98,34 +121,59 @@ The Implementer Agent works on one feature at a time. If tests fail, it logs the
 ./ralph.sh help       # Show help
 ```
 
+### PowerShell
+```powershell
+.\ralph.ps1 init       # Phase 1: Create features from PRD
+.\ralph.ps1 validate   # Phase 2: Validate PRD coverage (loops)
+.\ralph.ps1 run        # Phase 3: Implement features (loops)
+.\ralph.ps1 auto       # Run all phases automatically
+.\ralph.ps1 status     # Show current project state
+.\ralph.ps1 help       # Show help
+```
+
 ---
 
 ## Project Structure
 
-After setup, your project will have:
+The framework ships in two variants with identical functionality:
+
+```
+claude-code/
+├── shell/                          # Bash variant (macOS / Linux)
+│   ├── ralph.sh                    # Main entry point
+│   ├── prompts/
+│   │   ├── initializer.md          # Phase 1 instructions
+│   │   ├── validator.md            # Phase 2 instructions
+│   │   └── implementer.md         # Phase 3 instructions
+│   └── .claude/
+│       ├── settings.json
+│       ├── rules/                  # Auto-loaded coding rules
+│       └── skills/ralph/           # Companion .sh scripts + SKILL.md
+│
+├── powershell/                     # PowerShell variant (Windows / cross-platform)
+│   ├── ralph.ps1                   # Main entry point
+│   ├── prompts/
+│   │   ├── initializer.md          # Phase 1 instructions
+│   │   ├── validator.md            # Phase 2 instructions
+│   │   └── implementer.md         # Phase 3 instructions
+│   └── .claude/
+│       ├── settings.json
+│       ├── rules/                  # Auto-loaded coding rules
+│       └── skills/ralph/           # Companion .ps1 scripts + SKILL.md
+│
+├── CLAUDE.md                       # Framework documentation
+├── QUICKSTART.md                   # Quick start guide
+└── README.md                       # This file
+```
+
+After copying either variant to your project, you'll also get these auto-created files:
 
 ```
 your-project/
-├── ralph.sh                    # Main entry point
 ├── prd.md                      # YOUR requirements (you write this)
 ├── feature_list.json           # Generated features (auto-created)
 ├── validation-state.json       # Validation tracking (auto-created)
-├── claude-progress.txt         # Detailed iteration log (auto-created)
-├── prompts/
-│   ├── initializer.md          # Phase 1 instructions
-│   ├── validator.md            # Phase 2 instructions
-│   └── implementer.md          # Phase 3 instructions
-├── templates/
-│   ├── prd.md                  # PRD template (copy this)
-│   ├── feature_list.json       # Feature template
-│   ├── validation-state.json   # Validation template
-│   └── claude-progress.txt     # Progress template
-├── examples/
-│   └── pharmacy-bot/           # Example project
-│       ├── prd.md
-│       └── feature_list.json
-├── CLAUDE.md                   # Framework documentation
-└── README.md                   # This file
+└── claude-progress.txt         # Detailed iteration log (auto-created)
 ```
 
 ---
@@ -234,19 +282,31 @@ Action: Adds F050: "System handles 1000 concurrent user sessions"
 
 ## Configuration
 
-### Environment Variables
+### Shell (bash)
 
 ```bash
-# Validation phase
+# Environment variables
 MAX_VALIDATE_ITERATIONS=10     # Default: 10
-COVERAGE_THRESHOLD=95          # Default: 95%
-
-# Implementation phase
 MAX_IMPLEMENT_ITERATIONS=50    # Default: 50
+COVERAGE_THRESHOLD=95          # Default: 95%
 SLEEP_BETWEEN=2                # Default: 2 seconds
 
+# Command-line flags
+./ralph.sh run -m 100                         # Max 100 iterations
+./ralph.sh run -v                             # Verbose output
+./ralph.sh run --debug                        # Debug tracing
+./ralph.sh run --dangerously-skip-permissions # Full tool access
+./ralph.sh run --stream                       # JSON output for CI
+```
+
+### PowerShell (parameters)
+
+```powershell
 # Example: More iterations, higher coverage
-MAX_IMPLEMENT_ITERATIONS=100 COVERAGE_THRESHOLD=100 ./ralph.sh auto
+.\ralph.ps1 auto -MaxIterations 100 -CoverageThreshold 100
+
+# All available parameters
+.\ralph.ps1 run -m 100 -c 95 -s 2 -v -DangerouslySkipPermissions -Stream
 ```
 
 ### feature_list.json Config
@@ -306,10 +366,38 @@ rm feature_list.json validation-state.json claude-progress.txt
 
 ---
 
+## Tool Permissions
+
+By default, Claude Code prompts for permission on each tool use.
+
+### Fully Autonomous Mode
+
+To skip permission prompts and run fully autonomously:
+
+**Shell (bash):**
+```bash
+./ralph.sh run --dangerously-skip-permissions
+```
+
+**PowerShell:**
+```powershell
+.\ralph.ps1 run -DangerouslySkipPermissions
+```
+
+Additional flags for Claude Code:
+| Flag | Description |
+|------|-------------|
+| `-v` / `--verbose` | Show context summary and debug info |
+| `--debug` | Enable Claude Code debug-level tracing |
+| `--stream` | Stream JSON output for CI/automation (auto-adds `--verbose`) |
+
+⚠️ **Warning:** Bypass mode gives Claude full tool access. Use with caution.
+
+---
+
 ## Safety Features
 
 - **Git required:** Always run in a git repo for rollback
-- **No destructive commands:** Agent can't run `rm`, `sudo`, etc.
 - **Max iterations:** Loops stop after configured limit
 - **Blocked status:** Features that fail 5x stop trying
 
@@ -319,8 +407,13 @@ rm feature_list.json validation-state.json claude-progress.txt
 
 - [Claude Code CLI](https://www.npmjs.com/package/@anthropic-ai/claude-code) (`npm install -g @anthropic-ai/claude-code`)
 - Git
+
+### Shell variant (additional)
 - Bash shell
-- jq (for status command)
+- jq (for status command and stats queries)
+
+### PowerShell variant (additional)
+- PowerShell 7+ (`pwsh`)
 
 ---
 

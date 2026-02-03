@@ -151,27 +151,13 @@ log_debug() {
     fi
 }
 
-# Build Claude CLI flags based on tool permissions and verbosity
+# Build Claude CLI flags
 get_claude_flags() {
     local flags=""
 
+    # Full bypass mode
     if [[ "$ALLOW_ALL_TOOLS" == "true" ]]; then
-        # Full bypass — all tools allowed without permission prompts
         flags="--dangerously-skip-permissions"
-    else
-        # Explicit allowlist — safe default for autonomous operation
-        flags="$flags --allowedTools"
-        # File operations
-        flags="$flags \"Read\" \"Write\" \"Edit\" \"Glob\" \"Grep\" \"TodoWrite\""
-        # Git
-        flags="$flags \"Bash(git:*)\""
-        # Build tools
-        flags="$flags \"Bash(dotnet:*)\" \"Bash(npm:*)\" \"Bash(node:*)\" \"Bash(python:*)\" \"Bash(pytest:*)\""
-        # Shell utilities needed by implementer
-        flags="$flags \"Bash(jq:*)\" \"Bash(head:*)\" \"Bash(cat:*)\" \"Bash(grep:*)\" \"Bash(find:*)\""
-        flags="$flags \"Bash(ls:*)\" \"Bash(mkdir:*)\" \"Bash(cp:*)\" \"Bash(mv:*)\" \"Bash(wc:*)\" \"Bash(chmod:*)\""
-        # Ralph companion scripts (./ prefix)
-        flags="$flags \"Bash(./:*)\""
     fi
 
     # Verbosity flags
@@ -181,9 +167,9 @@ get_claude_flags() {
         flags="$flags --verbose"
     fi
 
-    # Stream JSON output (requires --verbose)
+    # Stream JSON output (requires --verbose when using -p)
     if [[ "$STREAM_OUTPUT" == "true" ]]; then
-        if [[ "$flags" != *"--verbose"* ]]; then
+        if [[ "$flags" != *"--verbose"* && "$flags" != *"--debug"* ]]; then
             flags="$flags --verbose"
         fi
         flags="$flags --output-format stream-json"
@@ -682,6 +668,14 @@ run_implement() {
             print_warning "Claude exited with code $EXIT_CODE"
             log_debug "Claude exited with code $EXIT_CODE"
         fi
+
+        # Safety net: recalculate .stats from actual feature statuses
+        # (in case Claude edited feature_list.json directly instead of using companion scripts)
+        jq '.stats.complete = ([.features[] | select(.status == "complete")] | length) |
+            .stats.in_progress = ([.features[] | select(.status == "in_progress")] | length) |
+            .stats.pending = ([.features[] | select(.status == "pending")] | length) |
+            .stats.blocked = ([.features[] | select(.status == "blocked")] | length)' \
+            feature_list.json > feature_list.json.tmp 2>/dev/null && mv feature_list.json.tmp feature_list.json || true
 
         # Data-driven completion check: query feature_list.json directly
         REMAINING=$(jq '[.features[] | select(.status == "pending" or .status == "in_progress")] | length' feature_list.json 2>/dev/null || echo "-1")

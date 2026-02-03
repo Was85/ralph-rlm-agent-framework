@@ -118,7 +118,7 @@ function Show-Help {
     Write-Host "  -MaxValidateIterations N          Max validation iterations (default: 10)"
     Write-Host "  -CoverageThreshold, -c N          Required PRD coverage % (default: 95)"
     Write-Host "  -SleepBetween, -s N               Seconds between iterations (default: 2)"
-    Write-Host "  -AllowAllTools                    Enable all Copilot tools (less safe)"
+    Write-Host "  -AllowAllTools                    Skip permission prompts (less safe, faster)"
     Write-Host ""
     
     Write-Host "WORKFLOW" -ForegroundColor White
@@ -257,49 +257,39 @@ function Test-Preflight {
 }
 
 # ══════════════════════════════════════════════════════════════
+# Build Copilot CLI flags
+# ══════════════════════════════════════════════════════════════
+
+function Get-CopilotFlags {
+    $flags = @()
+
+    # Full bypass mode
+    if ($script:AllowAllToolsFlag) {
+        $flags += "--allow-all-tools"
+    }
+
+    # Note: Copilot CLI does not have --verbose/--debug flags
+
+    return $flags
+}
+
+# ══════════════════════════════════════════════════════════════
 # Run Copilot CLI with prompt
 # ══════════════════════════════════════════════════════════════
 
 function Invoke-Copilot {
     param([string]$Prompt)
-    
-    # Run copilot with prompt passed directly (prompts are short now - files read by agent)
-    if ($script:AllowAllToolsFlag) {
-        & copilot --allow-all-tools `
-                  --deny-tool "shell(Remove-Item)" `
-                  --deny-tool "shell(rm)" `
-                  --deny-tool "shell(sudo)" `
-                  -p $Prompt
-    }
-    else {
-        & copilot --allow-tool "edit_file" `
-                  --allow-tool "create_file" `
-                  --allow-tool "view_file" `
-                  --allow-tool "list_dir" `
-                  --allow-tool "str_replace_editor" `
-                  --allow-tool "shell(git)" `
-                  --allow-tool "shell(dotnet)" `
-                  --allow-tool "shell(npm)" `
-                  --allow-tool "shell(node)" `
-                  --allow-tool "shell(python)" `
-                  --allow-tool "shell(pytest)" `
-                  --allow-tool "shell(Get-Content)" `
-                  --allow-tool "shell(Get-ChildItem)" `
-                  --allow-tool "shell(Get-Date)" `
-                  --allow-tool "shell(Get-Location)" `
-                  --allow-tool "shell(Select-String)" `
-                  --allow-tool "shell(Test-Path)" `
-                  --allow-tool "shell(Set-Content)" `
-                  --allow-tool "shell(Add-Content)" `
-                  --allow-tool "shell(New-Item)" `
-                  --allow-tool "shell(Copy-Item)" `
-                  --deny-tool "shell(Remove-Item)" `
-                  --deny-tool "shell(rm)" `
-                  --deny-tool "fetch" `
-                  --deny-tool "websearch" `
-                  -p $Prompt
-    }
-    
+
+    $flags = Get-CopilotFlags
+
+    # Build full argument list to avoid PowerShell splatting issues
+    $allArgs = @()
+    $allArgs += $flags
+    $allArgs += "-p"
+    $allArgs += $Prompt
+
+    & copilot @allArgs
+
     return $LASTEXITCODE
 }
 
@@ -353,16 +343,15 @@ Start by asking the user about their project (Phase 1: Project Understanding).
     Write-Host ""
 
     # Use interactive mode (-i flag) so the user can answer questions
-    if ($script:AllowAllToolsFlag) {
-        & copilot -i $fullPrompt `
-                  --allow-all-tools `
-                  --deny-tool "shell(Remove-Item)" `
-                  --deny-tool "shell(rm)" `
-                  --deny-tool "shell(sudo)"
-    }
-    else {
-        & copilot -i $fullPrompt
-    }
+    $flags = Get-CopilotFlags
+
+    # Build full argument list to avoid PowerShell splatting issues
+    $allArgs = @()
+    $allArgs += "-i"
+    $allArgs += $flags
+    $allArgs += $fullPrompt
+
+    & copilot @allArgs
 
     if (Test-Path "prd.md") {
         Write-Host ""

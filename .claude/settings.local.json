@@ -5,7 +5,18 @@
       "Bash(if [ -f \"C:/Temp/ralph-test-2/feature_list.json\" ])",
       "Bash(then cat \"C:/Temp/ralph-test-2/feature_list.json\")",
       "Bash(else echo \"FILE NOT FOUND\")",
-      "Bash(fi)"
+      "Bash(fi)",
+      "Bash(Measure-Object)",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(if [ -f \"C:/Alcina/devtoolkit/package.json\" ])",
+      "Bash(then echo \"=== package.json found ===\")",
+      "Bash(else echo \"No package.json found\")",
+      "Bash(if [ -d \"C:/Alcina/devtoolkit/pages\" ])",
+      "Bash(then find \"C:/Alcina/devtoolkit/pages\" -name \"*.html\")",
+      "Bash(else echo \"No pages directory\")",
+      "Bash(if [ -d \"C:/Alcina/devtoolkit/assets/js/tools\" ])",
+      "Bash(then find \"C:/Alcina/devtoolkit/assets/js/tools\" -name \"*.js\" -type f)",
+      "Bash(else echo \"No assets/js/tools directory found\")"
     ]
   }
 }
