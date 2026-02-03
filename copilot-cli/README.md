@@ -155,32 +155,19 @@ your-project\
 
 ## Tool Permissions
 
-By default, the framework allows safe operations:
-
-```powershell
-# Allowed
---allow-tool 'edit_file'
---allow-tool 'create_file'
---allow-tool 'view_file'
---allow-tool 'shell(git)'
---allow-tool 'shell(dotnet)'
---allow-tool 'shell(Get-Content)'
---allow-tool 'shell(Get-ChildItem)'
-
-# Denied
---deny-tool 'shell(Remove-Item)'
---deny-tool 'shell(rm)'
---deny-tool 'fetch'
---deny-tool 'websearch'
-```
+By default, Copilot CLI prompts for permission on each tool use.
 
 ### Fully Autonomous Mode
+
+To skip permission prompts and run fully autonomously:
 
 ```powershell
 .\ralph.ps1 run -AllowAllTools
 ```
 
-⚠️ **Warning:** This gives Copilot broader access. Use with caution.
+This passes `--allow-all-tools` to Copilot CLI.
+
+⚠️ **Warning:** This gives Copilot full tool access. Use with caution.
 
 ---
 

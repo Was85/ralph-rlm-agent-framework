@@ -167,8 +167,11 @@ get_claude_flags() {
         flags="$flags --verbose"
     fi
 
-    # Stream JSON output
+    # Stream JSON output (requires --verbose when using -p)
     if [[ "$STREAM_OUTPUT" == "true" ]]; then
+        if [[ "$flags" != *"--verbose"* && "$flags" != *"--debug"* ]]; then
+            flags="$flags --verbose"
+        fi
         flags="$flags --output-format stream-json"
     fi
 

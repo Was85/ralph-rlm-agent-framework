@@ -282,19 +282,21 @@ Action: Adds F050: "System handles 1000 concurrent user sessions"
 
 ## Configuration
 
-### Shell (environment variables)
+### Shell (bash)
 
 ```bash
-# Validation phase
+# Environment variables
 MAX_VALIDATE_ITERATIONS=10     # Default: 10
-COVERAGE_THRESHOLD=95          # Default: 95%
-
-# Implementation phase
 MAX_IMPLEMENT_ITERATIONS=50    # Default: 50
+COVERAGE_THRESHOLD=95          # Default: 95%
 SLEEP_BETWEEN=2                # Default: 2 seconds
 
-# Example: More iterations, higher coverage
-MAX_IMPLEMENT_ITERATIONS=100 COVERAGE_THRESHOLD=100 ./ralph.sh auto
+# Command-line flags
+./ralph.sh run -m 100                         # Max 100 iterations
+./ralph.sh run -v                             # Verbose output
+./ralph.sh run --debug                        # Debug tracing
+./ralph.sh run --dangerously-skip-permissions # Full tool access
+./ralph.sh run --stream                       # JSON output for CI
 ```
 
 ### PowerShell (parameters)
@@ -364,10 +366,38 @@ rm feature_list.json validation-state.json claude-progress.txt
 
 ---
 
+## Tool Permissions
+
+By default, Claude Code prompts for permission on each tool use.
+
+### Fully Autonomous Mode
+
+To skip permission prompts and run fully autonomously:
+
+**Shell (bash):**
+```bash
+./ralph.sh run --dangerously-skip-permissions
+```
+
+**PowerShell:**
+```powershell
+.\ralph.ps1 run -DangerouslySkipPermissions
+```
+
+Additional flags for Claude Code:
+| Flag | Description |
+|------|-------------|
+| `-v` / `--verbose` | Show context summary and debug info |
+| `--debug` | Enable Claude Code debug-level tracing |
+| `--stream` | Stream JSON output for CI/automation (auto-adds `--verbose`) |
+
+⚠️ **Warning:** Bypass mode gives Claude full tool access. Use with caution.
+
+---
+
 ## Safety Features
 
 - **Git required:** Always run in a git repo for rollback
-- **No destructive commands:** Agent can't run `rm`, `sudo`, etc.
 - **Max iterations:** Loops stop after configured limit
 - **Blocked status:** Features that fail 5x stop trying
 

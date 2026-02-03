@@ -282,12 +282,13 @@ function Invoke-Copilot {
 
     $flags = Get-CopilotFlags
 
-    if ($flags.Count -gt 0) {
-        & copilot @flags -p $Prompt
-    }
-    else {
-        & copilot -p $Prompt
-    }
+    # Build full argument list to avoid PowerShell splatting issues
+    $allArgs = @()
+    $allArgs += $flags
+    $allArgs += "-p"
+    $allArgs += $Prompt
+
+    & copilot @allArgs
 
     return $LASTEXITCODE
 }
@@ -343,12 +344,14 @@ Start by asking the user about their project (Phase 1: Project Understanding).
 
     # Use interactive mode (-i flag) so the user can answer questions
     $flags = Get-CopilotFlags
-    if ($flags.Count -gt 0) {
-        & copilot -i @flags $fullPrompt
-    }
-    else {
-        & copilot -i $fullPrompt
-    }
+
+    # Build full argument list to avoid PowerShell splatting issues
+    $allArgs = @()
+    $allArgs += "-i"
+    $allArgs += $flags
+    $allArgs += $fullPrompt
+
+    & copilot @allArgs
 
     if (Test-Path "prd.md") {
         Write-Host ""

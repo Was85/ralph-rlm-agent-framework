@@ -310,22 +310,16 @@ Because completion is derived from the data, you can **add new features at any t
 - **Git checkpoints** — Progress is committed, easy to rollback
 - **Blocked status** — If stuck, Ralph marks features as blocked for human review
 - **Max iterations** — Configurable limit prevents infinite loops
-- **Tool permissions** — Two-tier permission model for both editions:
+- **Tool permissions** — Simple two-mode permission model:
 
-  **Default mode** — Explicit allowlist of safe tools only:
-  | Category | Allowed |
-  |----------|---------|
-  | File ops | Read, Write, Edit, Glob, Grep |
-  | Git | `git` (all subcommands) |
-  | Build | `dotnet`, `npm`, `node`, `python`, `pytest` |
-  | Utilities | `jq`, `head`, `cat`, `grep`, `find`, `ls`, `mkdir`, `cp`, `mv`, `wc`, `chmod` |
-  | Scripts | `./` prefix (Ralph companion scripts) |
+  **Default mode** — Interactive permission prompts for each tool use
 
-  **Allow-all mode** — Full tool access, no permission prompts:
-  | Edition | Flag | Deny rules |
-  |---------|------|------------|
-  | Claude Code | `--dangerously-skip-permissions` | None (full bypass) |
-  | Copilot CLI | `-AllowAllTools` | `Remove-Item`, `rm`, `sudo` blocked |
+  **Bypass mode** — Full tool access, no permission prompts:
+  | Edition | Flag |
+  |---------|------|
+  | Claude Code (bash) | `--dangerously-skip-permissions` |
+  | Claude Code (ps) | `-DangerouslySkipPermissions` |
+  | Copilot CLI | `-AllowAllTools` |
 
 - **Windows NUL file cleanup** — Automatically removes stale `nul` files before each iteration (workaround for a Claude Code bug on Windows where a literal `nul` file gets created and blocks git operations)
 
@@ -369,7 +363,7 @@ Both editions support these flags:
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `-AllowAllTools` | false | Enable all Copilot tools with deny rules (less safe) |
+| `-AllowAllTools` | false | Full tool access, no permission prompts (less safe, faster) |
 
 **Examples:**
 ```bash

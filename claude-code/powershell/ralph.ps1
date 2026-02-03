@@ -132,8 +132,11 @@ function Get-ClaudeFlags {
         $flags += "--verbose"
     }
 
-    # Stream JSON output
+    # Stream JSON output (requires --verbose when using -p)
     if ($script:STREAM_OUTPUT) {
+        if ($flags -notcontains "--verbose" -and $flags -notcontains "--debug") {
+            $flags += "--verbose"
+        }
         $flags += "--output-format"
         $flags += "stream-json"
     }
