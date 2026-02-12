@@ -167,23 +167,54 @@ Ralph enforces right-sized features:
 - Features are ordered by `priority` with explicit `depends_on` for dependency chains
 - The Validator automatically flags oversized features for splitting
 
-## Two Editions
+## Three Editions
 
-Choose based on your AI subscription:
+Choose based on your AI subscription and workflow:
 
-| Edition | AI Agent | Shell | Best For |
-|---------|----------|-------|----------|
-| [claude-code/](./claude-code/) | Anthropic Claude | Bash | Claude Code users (Mac/Linux/WSL) |
-| [copilot-cli/](./copilot-cli/) | GitHub Copilot | PowerShell 7 | Copilot users (Windows native) |
+| Edition | AI Agent | Shell | Parallelism | Best For |
+|---------|----------|-------|-------------|----------|
+| [claude-code/](./claude-code/) | Anthropic Claude | Bash/PowerShell | Sequential (1 feature at a time) | Mac/Linux/WSL, smaller projects |
+| [claude-code-teams/](./claude-code-teams/) | Anthropic Claude | PowerShell | Parallel (N features simultaneously) | Large projects (20+ features), fast wall-clock time |
+| [copilot-cli/](./copilot-cli/) | GitHub Copilot | PowerShell 7 | Sequential (1 feature at a time) | Copilot users (Windows native) |
+
+### Teams Edition Highlights
+
+The **Teams Edition** replaces the Phase 3 PowerShell loop with an **agent team** — a team lead that spawns N implementer teammates + an optional code reviewer, all working in parallel:
+
+```
+Phase 3: Sequential                  Phase 3: Teams
+┌──────────────────────┐             ┌──────────────────────┐
+│  while (pending) {   │             │  Team Lead           │
+│    claude -p "..."   │             │    ├── Implementer-1 │
+│    check status      │             │    ├── Implementer-2 │
+│  }                   │             │    ├── Implementer-3 │
+│  1 feature at a time │             │    └── Reviewer      │
+└──────────────────────┘             │  N features at once  │
+                                     └──────────────────────┘
+```
+
+Key differences:
+- **Atomic feature claiming** via named mutex (no duplicate work)
+- **Per-feature code review** (optional, enabled by default)
+- **Structured progress logging** — grepable tags in `claude-progress.txt`
+- **Live monitoring** — `report-team-progress.ps1` companion script
+
+See [claude-code-teams/README.md](./claude-code-teams/README.md) for full details.
 
 ## Quick Start
 
 ### 1. Copy the framework to your project
 
-**Claude Code (Bash):**
+**Claude Code — Sequential (Bash):**
 ```bash
 cp -r claude-code/* your-project/
 cd your-project
+```
+
+**Claude Code — Teams (PowerShell):**
+```powershell
+Copy-Item -Recurse claude-code-teams\powershell\* your-project\
+Set-Location your-project
 ```
 
 **Copilot CLI (PowerShell):**
@@ -237,9 +268,14 @@ Make sure you're logged in and authenticated with GitHub Copilot
 
 ### 4. Run Ralph
 
-**Claude Code:**
+**Claude Code — Sequential:**
 ```bash
 ./ralph.sh auto
+```
+
+**Claude Code — Teams:**
+```powershell
+.\ralph-teams.ps1 auto -Teammates 3
 ```
 
 **Copilot CLI:**

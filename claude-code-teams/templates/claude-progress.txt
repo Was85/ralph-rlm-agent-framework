@@ -1,0 +1,68 @@
+# Ralph-RLM Progress Log
+
+## Project Information
+- **Project:** PROJECT_NAME
+- **Started:** YYYY-MM-DD
+- **Loop Started:** YYYY-MM-DD HH:MM
+
+## Current Status
+- **Total Features:** 0
+- **Complete:** 0
+- **In Progress:** 0
+- **Blocked:** 0
+
+---
+
+## Iteration Log
+
+<!-- 
+Each iteration appends here. Format:
+
+## [FEATURE_ID] - ATTEMPT N [PASSED/FAILED]
+**Timestamp:** YYYY-MM-DD HH:MM
+**Status:** complete | in_progress | blocked
+**What I tried:** [describe approach]
+**Error:** [if failed, exact error message]
+**Theory:** [if failed, what might fix it]
+**Commit:** [git hash]
+
+-->
+
+---
+
+## Example Entries (Delete These)
+
+### F001 - ATTEMPT 1 FAILED
+**Timestamp:** 2026-01-09 14:00
+**Status:** in_progress
+**What I tried:** Implemented JWT validation with basic token check
+**Error:** System.InvalidOperationException: Token refresh endpoint not configured
+**Theory:** Need to add refresh token logic before validation
+**Commit:** abc1234
+
+---
+
+### F001 - ATTEMPT 2 FAILED
+**Timestamp:** 2026-01-09 14:15
+**Status:** in_progress  
+**What I tried:** Added refresh token endpoint, updated auth middleware
+**Error:** Test failed: TokenExpiry edge case - token expires during request
+**Theory:** Need to add buffer time or retry logic for edge case
+**Commit:** def5678
+
+---
+
+### F001 - ATTEMPT 3 COMPLETE ✓
+**Timestamp:** 2026-01-09 14:30
+**Status:** complete
+**What worked:** Added 30-second buffer to token expiry check, added retry with refresh
+**Tests:** All 5 auth tests passing
+**Commit:** ghi9012
+
+---
+
+<!-- When all features done, write this line: -->
+<!-- ALL_FEATURES_COMPLETE -->
+
+<!-- When blocked and needs human help, write this line: -->
+<!-- BLOCKED_NEEDS_HUMAN -->
