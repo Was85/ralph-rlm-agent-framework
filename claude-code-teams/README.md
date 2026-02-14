@@ -124,7 +124,6 @@ Phase 1: INIT          Phase 2: VALIDATE        Phase 3: TEAM IMPLEMENT
 ### Git Conflicts
 - Teammates commit directly (no serialization through the lead)
 - Features are independent by design (different files)
-- Teammates do `git pull --rebase` before committing
 - Rare conflicts are resolved inline by the teammate
 
 ### Dual Tracking

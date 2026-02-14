@@ -888,6 +888,57 @@ function Show-PostRunReport {
 }
 
 # ======================================================================
+# Live Progress Snapshot
+# ======================================================================
+
+function Show-ImplementProgress {
+    <#
+    .SYNOPSIS
+        Print a one-line progress snapshot from feature_list.json.
+        Called before/after each iteration for visibility.
+    #>
+    if (-not (Test-Path "feature_list.json")) { return }
+
+    try {
+        $data = Get-Content "feature_list.json" -Raw | ConvertFrom-Json
+        $total      = @($data.features).Count
+        $complete   = @($data.features | Where-Object { $_.status -eq "complete" }).Count
+        $inProgress = @($data.features | Where-Object { $_.status -eq "in_progress" })
+        $blocked    = @($data.features | Where-Object { $_.status -eq "blocked" }).Count
+        $pending    = @($data.features | Where-Object { $_.status -eq "pending" }).Count
+
+        $ts = Get-Date -Format "HH:mm:ss"
+        $percent = 0
+        if ($total -gt 0) { $percent = [math]::Floor(($complete / $total) * 100) }
+
+        # Build active workers string
+        $workers = ""
+        if ($inProgress.Count -gt 0) {
+            $workerParts = @()
+            foreach ($f in $inProgress) {
+                $who = if ($f.claimed_by) { $f.claimed_by } else { "?" }
+                $workerParts += "$($who):$($f.id)"
+            }
+            $workers = " | active: $($workerParts -join ', ')"
+        }
+
+        Write-Host "[$ts] " -ForegroundColor DarkGray -NoNewline
+        Write-Host "$complete/$total" -ForegroundColor Green -NoNewline
+        Write-Host " complete ($percent%)" -NoNewline
+        Write-Host " | " -NoNewline
+        Write-Host "$($inProgress.Count) in-progress" -ForegroundColor Yellow -NoNewline
+        Write-Host " | " -NoNewline
+        Write-Host "$pending pending" -ForegroundColor Blue -NoNewline
+        Write-Host " | " -NoNewline
+        Write-Host "$blocked blocked" -ForegroundColor Red -NoNewline
+        Write-Host "$workers" -ForegroundColor DarkGray
+    }
+    catch {
+        Write-DebugLog "Show-ImplementProgress failed: $_"
+    }
+}
+
+# ======================================================================
 # Phase 3: Team Implement (Agent Teams)
 # ======================================================================
 
@@ -933,44 +984,117 @@ function Start-TeamImplement {
         return 1
     }
 
-    # Windows NUL file cleanup
-    if (Test-Path "nul" -ErrorAction SilentlyContinue) {
-        Remove-Item "nul" -Force -ErrorAction SilentlyContinue
-        Write-DebugLog "Removed stale 'nul' file (Windows Claude Code bug)"
-    }
-
-    # Build the team-lead prompt
-    $teamLeadPromptPath = Join-Path $PromptsDir "team-lead.md"
-    $teamLeadPrompt = Get-Content $teamLeadPromptPath -Raw
-
-    $config = "`n## Configuration`n"
-    $config += "- Teammates: $script:TEAMMATES`n"
-    $config += "- WithReviewer: $script:WITH_REVIEWER`n"
-    $config += "- Remaining features: $remaining`n"
-    $config += "- Prompts directory: $PromptsDir`n"
-    $config += "- Working directory: $(Get-Location)`n"
-
-    $fullPrompt = "$teamLeadPrompt`n$config"
-
-    Write-RalphInfo "Launching team lead agent..."
-    Write-RalphInfo "The team lead will spawn $script:TEAMMATES implementer teammates"
-    if ($script:WITH_REVIEWER) {
-        Write-RalphInfo "A reviewer teammate will review each feature before marking it complete"
-    }
-    Write-Host ""
-
     $phaseStart = Get-Date
+    $iteration = 0
 
-    # Run team lead via Invoke-Claude (-p mode).
-    # Claude in -p mode can still use TeamCreate, Task, SendMessage etc.
-    # through multi-turn tool usage. It runs the full workflow and exits.
-    Invoke-Claude -Prompt $fullPrompt
+    while ($iteration -lt $script:MAX_IMPLEMENT_ITERATIONS) {
+        # Windows NUL file cleanup
+        if (Test-Path "nul" -ErrorAction SilentlyContinue) {
+            Remove-Item "nul" -Force -ErrorAction SilentlyContinue
+            Write-DebugLog "Removed stale 'nul' file (Windows Claude Code bug)"
+        }
 
-    $phaseElapsed = (Get-Date) - $phaseStart
+        # Check remaining features at top of each iteration
+        try {
+            $features = Get-Content "feature_list.json" -Raw | ConvertFrom-Json
+            $remaining    = @($features.features | Where-Object { $_.status -eq "pending" -or $_.status -eq "in_progress" }).Count
+            $total        = @($features.features).Count
+            $complete     = @($features.features | Where-Object { $_.status -eq "complete" }).Count
+            $blockedCount = @($features.features | Where-Object { $_.status -eq "blocked" }).Count
+        }
+        catch {
+            Write-RalphWarning "Failed to parse feature_list.json: $_"
+            $iteration++
+            continue
+        }
+
+        # Exit conditions
+        if ($remaining -eq 0 -and $blockedCount -eq 0) {
+            Write-Host ""
+            Write-Host "==================================================================" -ForegroundColor Green
+            Write-Host "||  ALL FEATURES COMPLETE!  ($complete/$total)" -ForegroundColor Green
+            Write-Host "==================================================================" -ForegroundColor Green
+            Write-Host ""
+            $phaseElapsed = (Get-Date) - $phaseStart
+            Write-RalphInfo "Phase 3 elapsed: $($phaseElapsed.ToString('hh\:mm\:ss')) ($($iteration) iteration(s))"
+            Show-PostRunReport
+            return 0
+        }
+
+        if ($remaining -eq 0 -and $blockedCount -gt 0) {
+            Write-Host ""
+            Write-Host "==================================================================" -ForegroundColor Yellow
+            Write-Host "||  BLOCKED - Human intervention needed" -ForegroundColor Yellow
+            Write-Host "||     $complete/$total complete, $blockedCount blocked" -ForegroundColor Yellow
+            Write-Host "==================================================================" -ForegroundColor Yellow
+            Write-Host ""
+            $phaseElapsed = (Get-Date) - $phaseStart
+            Write-RalphInfo "Phase 3 elapsed: $($phaseElapsed.ToString('hh\:mm\:ss')) ($($iteration) iteration(s))"
+            Show-PostRunReport
+            return 2
+        }
+
+        # Iteration header
+        Write-Host ""
+        Write-Host "--- Implementation Iteration $($iteration + 1) of $script:MAX_IMPLEMENT_ITERATIONS ---" -ForegroundColor Cyan
+        Write-DebugLog "Implementation iteration $($iteration + 1) starting ($remaining remaining)"
+        Write-Host ""
+
+        # Progress snapshot (before)
+        Show-ImplementProgress
+
+        # Build the team-lead prompt with current state
+        $teamLeadPromptPath = Join-Path $PromptsDir "team-lead.md"
+        $teamLeadPrompt = Get-Content $teamLeadPromptPath -Raw
+
+        $config = "`n## Configuration`n"
+        $config += "- Teammates: $script:TEAMMATES`n"
+        $config += "- WithReviewer: $script:WITH_REVIEWER`n"
+        $config += "- Remaining features: $remaining`n"
+        $config += "- Prompts directory: $PromptsDir`n"
+        $config += "- Working directory: $(Get-Location)`n"
+        $config += "- Iteration: $($iteration + 1) of $script:MAX_IMPLEMENT_ITERATIONS`n"
+
+        $fullPrompt = "$teamLeadPrompt`n$config"
+
+        Write-RalphInfo "Launching team lead agent..."
+        Write-RalphInfo "The team lead will spawn $script:TEAMMATES implementer teammates"
+        if ($script:WITH_REVIEWER) {
+            Write-RalphInfo "A reviewer teammate will review each feature before marking it complete"
+        }
+        Write-Host ""
+
+        $iterStart = Get-Date
+
+        # Run team lead via Invoke-Claude (-p mode).
+        # Claude in -p mode can still use TeamCreate, Task, SendMessage etc.
+        # through multi-turn tool usage. It runs the full workflow and exits.
+        Invoke-Claude -Prompt $fullPrompt
+
+        $iterElapsed = (Get-Date) - $iterStart
+
+        # Post-iteration: repair stats and show progress
+        Repair-FeatureStats
+
+        Write-Host ""
+        Write-RalphInfo "Iteration $($iteration + 1) elapsed: $($iterElapsed.ToString('hh\:mm\:ss'))"
+
+        # Progress snapshot (after)
+        Show-ImplementProgress
+
+        $iteration++
+
+        if ($iteration -lt $script:MAX_IMPLEMENT_ITERATIONS) {
+            Write-RalphInfo "Checking for remaining features..."
+            Start-Sleep -Seconds $script:SLEEP_BETWEEN
+        }
+    }
+
+    # Max iterations reached
     Write-Host ""
-    Write-RalphInfo "Phase 3 elapsed: $($phaseElapsed.ToString('hh\:mm\:ss'))"
-
-    # Post-run: repair stats and show final status
+    Write-RalphWarning "Max implementation iterations reached ($script:MAX_IMPLEMENT_ITERATIONS)"
+    $phaseElapsed = (Get-Date) - $phaseStart
+    Write-RalphInfo "Phase 3 elapsed: $($phaseElapsed.ToString('hh\:mm\:ss')) ($iteration iteration(s))"
     Repair-FeatureStats
     Show-PostRunReport
 
@@ -986,27 +1110,7 @@ function Start-TeamImplement {
         return 1
     }
 
-    if ($remaining -eq 0 -and $blockedCount -eq 0) {
-        Write-Host ""
-        Write-Host "==================================================================" -ForegroundColor Green
-        Write-Host "||  ALL FEATURES COMPLETE!  ($complete/$total)" -ForegroundColor Green
-        Write-Host "==================================================================" -ForegroundColor Green
-        Write-Host ""
-        return 0
-    }
-
-    if ($remaining -eq 0 -and $blockedCount -gt 0) {
-        Write-Host ""
-        Write-Host "==================================================================" -ForegroundColor Yellow
-        Write-Host "||  BLOCKED - Human intervention needed" -ForegroundColor Yellow
-        Write-Host "||     $complete/$total complete, $blockedCount blocked" -ForegroundColor Yellow
-        Write-Host "==================================================================" -ForegroundColor Yellow
-        Write-Host ""
-        return 2
-    }
-
-    Write-Host ""
-    Write-RalphInfo "Progress: $complete/$total complete, $remaining remaining, $blockedCount blocked"
+    Write-RalphInfo "Final: $complete/$total complete, $remaining remaining, $blockedCount blocked"
     return 1
 }
 
@@ -1070,13 +1174,31 @@ function Start-Auto {
     }
 
     # Phase 3: Team Implement
-    Start-TeamImplement
+    $implResult = Start-TeamImplement
 
     $autoElapsed = (Get-Date) - $autoStart
     Write-Host ""
-    Write-Host "================================================================" -ForegroundColor Cyan
-    Write-Host "  Total elapsed: $($autoElapsed.ToString('hh\:mm\:ss'))" -ForegroundColor White
-    Write-Host "================================================================" -ForegroundColor Cyan
+
+    if ($implResult -eq 0) {
+        Write-Host "================================================================" -ForegroundColor Green
+        Write-Host "  RALPH COMPLETE - All features implemented successfully" -ForegroundColor Green
+        Write-Host "  Total elapsed: $($autoElapsed.ToString('hh\:mm\:ss'))" -ForegroundColor White
+        Write-Host "================================================================" -ForegroundColor Green
+    }
+    elseif ($implResult -eq 2) {
+        Write-Host "================================================================" -ForegroundColor Yellow
+        Write-Host "  RALPH BLOCKED - Some features need human intervention" -ForegroundColor Yellow
+        Write-Host "  Total elapsed: $($autoElapsed.ToString('hh\:mm\:ss'))" -ForegroundColor White
+        Write-Host "================================================================" -ForegroundColor Yellow
+    }
+    else {
+        Write-Host "================================================================" -ForegroundColor Red
+        Write-Host "  RALPH INCOMPLETE - Features remain after max iterations" -ForegroundColor Red
+        Write-Host "  Total elapsed: $($autoElapsed.ToString('hh\:mm\:ss'))" -ForegroundColor White
+        Write-Host "  Re-run: .\ralph-teams.ps1 run" -ForegroundColor Gray
+        Write-Host "================================================================" -ForegroundColor Red
+    }
+
     Write-Host ""
 }
 

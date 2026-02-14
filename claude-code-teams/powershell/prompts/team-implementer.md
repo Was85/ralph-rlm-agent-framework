@@ -89,9 +89,6 @@ If the result is `ALL_CLAIMED`:
 # Also check git state
 git log --oneline -5
 git status
-
-# Pull latest changes from other teammates
-git pull --rebase
 ```
 
 Understand:
@@ -158,14 +155,7 @@ dotnet test
 
 ## STEP 6A: IF TESTS PASS
 
-1. **Git pull and rebase** (prevent conflicts with other teammates):
-```bash
-git pull --rebase
-```
-
-2. **If rebase conflicts**: resolve them inline, then continue.
-
-3. **Git commit** (one feature per commit):
+1. **Git commit** (one feature per commit):
 ```bash
 git add .
 git commit -m "feat: [FEATURE_ID] - [description]
@@ -279,7 +269,6 @@ If the team lead sends you a fix-it task after review rejection:
 ### DO:
 - Use `claim-feature.ps1` to claim features atomically (prevents double-claiming)
 - Use companion `.ps1` scripts for ALL feature_list.json writes
-- `git pull --rebase` before every commit
 - Work continuously — claim, implement, commit, claim next
 - Report to team lead and reviewer via SendMessage
 - Follow TDD for all implementations
@@ -324,7 +313,7 @@ Append timestamped entries to `claude-progress.txt` at key events. Use these tag
 
 - **[CLAIM]**: Immediately after `claim-feature.ps1` returns a feature
 - **[TEST]**: After every test run (both pass and fail)
-- **[GIT]**: After every `git commit` and after `git pull --rebase` if there were changes
+- **[GIT]**: After every `git commit`
 
 Also announce each claim to the team lead via `SendMessage` so they can track progress.
 

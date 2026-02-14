@@ -171,7 +171,6 @@ pending
 ### Git conflicts
 - Teammates commit directly to the branch
 - Features are independent by design (different files)
-- Teammates do `git pull --rebase` before committing
 - If conflicts occur, the teammate resolves them inline
 
 ### All implementers idle but work remains
