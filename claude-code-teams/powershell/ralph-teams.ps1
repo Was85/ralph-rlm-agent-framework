@@ -439,7 +439,11 @@ function Test-Preflight {
 # ======================================================================
 
 function Invoke-Claude {
-    param([string]$Prompt)
+    param(
+        [string]$Prompt,
+        [int]$MaxTurns = 0,
+        [int]$TimeoutMinutes = 0
+    )
 
     $flags = Get-ClaudeFlags
 
@@ -466,10 +470,78 @@ function Invoke-Claude {
 
         $allArgs = @()
         $allArgs += $flags
+        if ($MaxTurns -gt 0) {
+            $allArgs += "--max-turns"
+            $allArgs += "$MaxTurns"
+            Write-DebugLog "Max turns: $MaxTurns"
+        }
         $allArgs += "-p"
         $allArgs += $shortPrompt
 
-        & claude @allArgs
+        if ($TimeoutMinutes -gt 0) {
+            # Run with process-level timeout. This is the only bulletproof way
+            # to prevent the team lead from hanging indefinitely — prompt-level
+            # fixes and --max-turns are not reliable enough because teammate
+            # messages keep generating new turns in agent teams mode.
+            $deadline = (Get-Date).AddMinutes($TimeoutMinutes)
+            Write-DebugLog "Process timeout: $TimeoutMinutes minutes (deadline: $($deadline.ToString('HH:mm:ss')))"
+
+            $psi = New-Object System.Diagnostics.ProcessStartInfo
+            $psi.FileName = "claude"
+            $psi.Arguments = ($allArgs | ForEach-Object { if ($_ -match '\s') { "`"$_`"" } else { $_ } }) -join ' '
+            $psi.UseShellExecute = $false
+            $psi.WorkingDirectory = (Get-Location).Path
+
+            $proc = [System.Diagnostics.Process]::Start($psi)
+            Write-DebugLog "Claude PID: $($proc.Id)"
+
+            # Poll for exit. Smart early-exit: once all features are done in
+            # feature_list.json, give a short grace period for cleanup, then kill.
+            # This avoids waiting the full timeout when work is already complete.
+            $allDoneAt = $null
+            $gracePeriodSeconds = 60
+
+            while (-not $proc.HasExited) {
+                # Hard timeout — absolute safety net
+                if ((Get-Date) -gt $deadline) {
+                    Write-RalphWarning "Claude process timed out after $TimeoutMinutes minutes — killing"
+                    try { taskkill /PID $proc.Id /T /F 2>$null } catch { $proc.Kill() }
+                    break
+                }
+
+                # Smart exit: check if all features are done
+                if (-not $allDoneAt) {
+                    try {
+                        $featureData = Get-Content "feature_list.json" -Raw -ErrorAction Stop | ConvertFrom-Json
+                        $remaining = @($featureData.features | Where-Object { $_.status -eq 'pending' -or $_.status -eq 'in_progress' }).Count
+                        if ($remaining -eq 0) {
+                            $allDoneAt = Get-Date
+                            Write-RalphInfo "All features complete — giving ${gracePeriodSeconds}s grace for team cleanup..."
+                        }
+                    }
+                    catch { }
+                }
+                elseif ((Get-Date) -gt $allDoneAt.AddSeconds($gracePeriodSeconds)) {
+                    Write-RalphWarning "Grace period expired — killing team lead process"
+                    try { taskkill /PID $proc.Id /T /F 2>$null } catch { $proc.Kill() }
+                    break
+                }
+
+                Start-Sleep -Seconds 5
+            }
+
+            if ($proc.HasExited) {
+                $LASTEXITCODE = $proc.ExitCode
+                Write-DebugLog "Claude exited with code $LASTEXITCODE"
+            }
+            else {
+                $LASTEXITCODE = 1
+            }
+        }
+        else {
+            # No timeout — blocking call (used for phases 1 and 2)
+            & claude @allArgs
+        }
     }
     finally {
         Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
@@ -788,6 +860,57 @@ Read these files from the current directory:
 }
 
 # ======================================================================
+# Live Progress Snapshot
+# ======================================================================
+
+function Show-ImplementProgress {
+    <#
+    .SYNOPSIS
+        Print a one-line progress snapshot from feature_list.json.
+        Called before/after each iteration for visibility.
+    #>
+    if (-not (Test-Path "feature_list.json")) { return }
+
+    try {
+        $data = Get-Content "feature_list.json" -Raw | ConvertFrom-Json
+        $total      = @($data.features).Count
+        $complete   = @($data.features | Where-Object { $_.status -eq "complete" }).Count
+        $inProgress = @($data.features | Where-Object { $_.status -eq "in_progress" })
+        $blocked    = @($data.features | Where-Object { $_.status -eq "blocked" }).Count
+        $pending    = @($data.features | Where-Object { $_.status -eq "pending" }).Count
+
+        $ts = Get-Date -Format "HH:mm:ss"
+        $percent = 0
+        if ($total -gt 0) { $percent = [math]::Floor(($complete / $total) * 100) }
+
+        # Build active workers string
+        $workers = ""
+        if ($inProgress.Count -gt 0) {
+            $workerParts = @()
+            foreach ($f in $inProgress) {
+                $who = if ($f.claimed_by) { $f.claimed_by } else { "?" }
+                $workerParts += "$($who):$($f.id)"
+            }
+            $workers = " | active: $($workerParts -join ', ')"
+        }
+
+        Write-Host "[$ts] " -ForegroundColor DarkGray -NoNewline
+        Write-Host "$complete/$total" -ForegroundColor Green -NoNewline
+        Write-Host " complete ($percent%)" -NoNewline
+        Write-Host " | " -NoNewline
+        Write-Host "$($inProgress.Count) in-progress" -ForegroundColor Yellow -NoNewline
+        Write-Host " | " -NoNewline
+        Write-Host "$pending pending" -ForegroundColor Blue -NoNewline
+        Write-Host " | " -NoNewline
+        Write-Host "$blocked blocked" -ForegroundColor Red -NoNewline
+        Write-Host "$workers" -ForegroundColor DarkGray
+    }
+    catch {
+        Write-DebugLog "Show-ImplementProgress failed: $_"
+    }
+}
+
+# ======================================================================
 # Post-Run Report
 # ======================================================================
 
@@ -885,57 +1008,6 @@ function Show-PostRunReport {
 
     Write-Host "================================================================" -ForegroundColor Cyan
     Write-Host ""
-}
-
-# ======================================================================
-# Live Progress Snapshot
-# ======================================================================
-
-function Show-ImplementProgress {
-    <#
-    .SYNOPSIS
-        Print a one-line progress snapshot from feature_list.json.
-        Called before/after each iteration for visibility.
-    #>
-    if (-not (Test-Path "feature_list.json")) { return }
-
-    try {
-        $data = Get-Content "feature_list.json" -Raw | ConvertFrom-Json
-        $total      = @($data.features).Count
-        $complete   = @($data.features | Where-Object { $_.status -eq "complete" }).Count
-        $inProgress = @($data.features | Where-Object { $_.status -eq "in_progress" })
-        $blocked    = @($data.features | Where-Object { $_.status -eq "blocked" }).Count
-        $pending    = @($data.features | Where-Object { $_.status -eq "pending" }).Count
-
-        $ts = Get-Date -Format "HH:mm:ss"
-        $percent = 0
-        if ($total -gt 0) { $percent = [math]::Floor(($complete / $total) * 100) }
-
-        # Build active workers string
-        $workers = ""
-        if ($inProgress.Count -gt 0) {
-            $workerParts = @()
-            foreach ($f in $inProgress) {
-                $who = if ($f.claimed_by) { $f.claimed_by } else { "?" }
-                $workerParts += "$($who):$($f.id)"
-            }
-            $workers = " | active: $($workerParts -join ', ')"
-        }
-
-        Write-Host "[$ts] " -ForegroundColor DarkGray -NoNewline
-        Write-Host "$complete/$total" -ForegroundColor Green -NoNewline
-        Write-Host " complete ($percent%)" -NoNewline
-        Write-Host " | " -NoNewline
-        Write-Host "$($inProgress.Count) in-progress" -ForegroundColor Yellow -NoNewline
-        Write-Host " | " -NoNewline
-        Write-Host "$pending pending" -ForegroundColor Blue -NoNewline
-        Write-Host " | " -NoNewline
-        Write-Host "$blocked blocked" -ForegroundColor Red -NoNewline
-        Write-Host "$workers" -ForegroundColor DarkGray
-    }
-    catch {
-        Write-DebugLog "Show-ImplementProgress failed: $_"
-    }
 }
 
 # ======================================================================
@@ -1069,7 +1141,17 @@ function Start-TeamImplement {
         # Run team lead via Invoke-Claude (-p mode).
         # Claude in -p mode can still use TeamCreate, Task, SendMessage etc.
         # through multi-turn tool usage. It runs the full workflow and exits.
-        Invoke-Claude -Prompt $fullPrompt
+        # Max turns = 50 base (setup: create team, tasks, spawn, shutdown) + 5 per feature
+        # (monitoring messages per feature). This provides a soft ceiling alongside the
+        # hard process timeout below. The outer while-loop retries if work remains.
+        $maxTurns = 50 + ($remaining * 5)
+
+        # Process timeout = 5 min base + 2 min per feature. This is the bulletproof
+        # kill switch — if the team lead hangs in monitoring or shutdown (common with
+        # agent teams), the process gets forcefully terminated and the outer loop retries.
+        $timeoutMin = 5 + ($remaining * 2)
+        Write-DebugLog "Team lead: max-turns=$maxTurns, timeout=${timeoutMin}m"
+        Invoke-Claude -Prompt $fullPrompt -MaxTurns $maxTurns -TimeoutMinutes $timeoutMin
 
         $iterElapsed = (Get-Date) - $iterStart
 

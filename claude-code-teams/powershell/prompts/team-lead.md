@@ -100,50 +100,67 @@ If the configuration says `-SkipReview`, do NOT spawn the reviewer. Instead, fea
 
 ## STEP 5: MONITOR
 
-After spawning teammates, enter a monitoring loop:
+After spawning teammates, handle incoming messages and track progress.
 
-1. Check `TaskList` for progress
-2. Read teammate messages (delivered automatically)
-3. Track which features are complete, which are in review, which are blocked
+**EXIT CONDITION**: After each message you process, check `feature_list.json` (read it directly). Count features with status `pending` or `in_progress`. If **zero remain** (all are `complete` or `blocked`), **immediately proceed to Step 6 (COMPLETION)**. Do NOT keep monitoring once all features are done.
 
-### When an implementer finishes a feature:
+### Hooks (automatic enforcement)
+
+The following hooks run automatically — you do NOT need to implement this logic yourself:
+
+- **TeammateIdle hook**: When an implementer goes idle with features remaining, the hook automatically sends them feedback to keep working. You don't need to nudge idle implementers manually.
+- **TaskCompleted hook**: When a task is marked complete, the hook validates that the feature was properly claimed via `claim-feature.ps1`. Invalid completions are blocked automatically.
+- **Stop hook**: If you try to stop while features are still pending/in-progress, the hook blocks you and tells you to continue. This is a safety net — still check the exit condition yourself.
+
+### Message handling:
+
+**When an implementer finishes a feature:**
 - They mark the implement task as completed (this unblocks the review task)
 - They send you a message with the feature ID and commit hash
 - The reviewer picks up the review task automatically
+- **Check exit condition above**
 
-### When the reviewer approves a feature:
+**When the reviewer approves a feature:**
 - Reviewer marks the review task as completed
 - Reviewer updates `feature_list.json` status to `complete` via the companion script
 - Report progress
+- **Check exit condition above**
 
-### When the reviewer rejects a feature:
+**When the reviewer rejects a feature:**
 - Reviewer sends you the findings
 - Create a new fix-it task: `[FXXX] Fix: <reviewer findings>`
 - Assign the fix-it task to an available implementer (or the original one)
 - The feature stays `in_progress` until the fix is done and review passes
 
-### When a feature is blocked (max attempts):
+**When a feature is blocked (max attempts):**
 - Log in claude-progress.txt
 - Mark as blocked
-- Move on to next feature
+- **Check exit condition above**
+
+**When a teammate goes idle:**
+- This is normal — teammates go idle between turns
+- The TeammateIdle hook handles nudging them automatically
+- Do NOT wait for idle teammates if all features are already complete/blocked
+- **Check exit condition above — if met, proceed to Step 6 immediately**
 
 ---
 
 ## STEP 6: COMPLETION
 
-When all features are complete or blocked:
+When all features are complete or blocked, **immediately clean up and exit**:
 
-1. Send `shutdown_request` to all teammates
-2. Wait for shutdown confirmations
-3. Call `TeamDelete` to clean up
-4. Report final status:
+1. Call `TeamDelete` **immediately** — do NOT send shutdown requests first. TeamDelete force-removes the team and all teammates. This is the fastest, most reliable cleanup.
+2. Output the final status report:
 
 ```
 All features processed.
   Complete: X
   Blocked: Y
-  Total iterations: Z
 ```
+
+3. **STOP** — do not make any more tool calls. Your job is done.
+
+**CRITICAL**: Do NOT send `shutdown_request` messages. Do NOT wait for teammate confirmations. Do NOT continue processing teammate messages after TeamDelete. Just delete the team and output your final report. Every extra turn you take is wasted.
 
 ---
 
