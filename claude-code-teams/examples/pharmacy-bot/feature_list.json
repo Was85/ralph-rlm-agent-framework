@@ -1,0 +1,123 @@
+{
+  "project": "pharmacy-slack-bot",
+  "description": "Slack bot for pharmacy inventory management and alerts",
+  "created": "2026-01-09",
+  "config": {
+    "max_attempts_per_feature": 5,
+    "test_command": "dotnet test",
+    "build_command": "dotnet build"
+  },
+  "stats": {
+    "total_features": 8,
+    "complete": 0,
+    "in_progress": 0,
+    "pending": 8,
+    "blocked": 0
+  },
+  "features": [
+    {
+      "id": "F001",
+      "description": "Slack OAuth connection and token storage",
+      "acceptance_criteria": [
+        "Bot can authenticate with Slack OAuth",
+        "Access token stored securely",
+        "Token refresh works automatically"
+      ],
+      "status": "pending",
+      "attempts": 0,
+      "last_error": null,
+      "notes": ""
+    },
+    {
+      "id": "F002",
+      "description": "Basic slash command handler",
+      "acceptance_criteria": [
+        "/pharmacy command responds in Slack",
+        "Returns help text with available commands",
+        "Handles unknown subcommands gracefully"
+      ],
+      "status": "pending",
+      "attempts": 0,
+      "last_error": null,
+      "notes": ""
+    },
+    {
+      "id": "F003",
+      "description": "Inventory query from pharmacy API",
+      "acceptance_criteria": [
+        "Can query inventory API with medication name",
+        "Returns stock count and location",
+        "Handles API timeouts with retry"
+      ],
+      "status": "pending",
+      "attempts": 0,
+      "last_error": null,
+      "notes": ""
+    },
+    {
+      "id": "F004",
+      "description": "Low stock alert generation",
+      "acceptance_criteria": [
+        "Detects when stock below threshold",
+        "Generates alert with medication details",
+        "Includes reorder suggestion"
+      ],
+      "status": "pending",
+      "attempts": 0,
+      "last_error": null,
+      "notes": ""
+    },
+    {
+      "id": "F005",
+      "description": "Scheduled daily inventory check",
+      "acceptance_criteria": [
+        "Runs automatically at configured time",
+        "Checks all monitored medications",
+        "Posts summary to designated channel"
+      ],
+      "status": "pending",
+      "attempts": 0,
+      "last_error": null,
+      "notes": ""
+    },
+    {
+      "id": "F006",
+      "description": "User permission management",
+      "acceptance_criteria": [
+        "Only authorized users can query inventory",
+        "Admin can add/remove authorized users",
+        "Unauthorized requests logged and rejected"
+      ],
+      "status": "pending",
+      "attempts": 0,
+      "last_error": null,
+      "notes": ""
+    },
+    {
+      "id": "F007",
+      "description": "Medication expiry tracking",
+      "acceptance_criteria": [
+        "Tracks expiry dates from API",
+        "Alerts 30 days before expiry",
+        "Lists all expiring items on demand"
+      ],
+      "status": "pending",
+      "attempts": 0,
+      "last_error": null,
+      "notes": ""
+    },
+    {
+      "id": "F008",
+      "description": "Audit logging",
+      "acceptance_criteria": [
+        "All queries logged with user and timestamp",
+        "All alerts logged with details",
+        "Logs queryable by admin"
+      ],
+      "status": "pending",
+      "attempts": 0,
+      "last_error": null,
+      "notes": ""
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "allowedCommands": [
+    "git status",
+    "git add",
+    "git commit",
+    "git log",
+    "git diff",
+    "git stash",
+    "dotnet build",
+    "dotnet test",
+    "dotnet run",
+    "npm install",
+    "npm test",
+    "npm run",
+    "node",
+    "python",
+    "pytest",
+    "pip install",
+    "cat",
+    "ls",
+    "head",
+    "tail",
+    "grep",
+    "find",
+    "wc",
+    "jq"
+  ],
+  "blockedCommands": [
+    "rm",
+    "rmdir",
+    "sudo",
+    "curl",
+    "wget",
+    "chmod",
+    "chown"
+  ]
+}

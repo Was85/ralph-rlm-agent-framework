@@ -1,0 +1,43 @@
+{
+  "project": "PROJECT_NAME",
+  "description": "Brief description of what the project does",
+  "created": "YYYY-MM-DD",
+  "config": {
+    "max_attempts_per_feature": 5,
+    "test_command": "dotnet test",
+    "build_command": "dotnet build"
+  },
+  "stats": {
+    "total_features": 2,
+    "complete": 0,
+    "in_progress": 0,
+    "pending": 2,
+    "blocked": 0
+  },
+  "features": [
+    {
+      "id": "F001",
+      "description": "Clear, specific description of what this feature does",
+      "acceptance_criteria": [
+        "Criterion 1 that must be true for feature to pass",
+        "Criterion 2 that must be true for feature to pass"
+      ],
+      "status": "pending",
+      "attempts": 0,
+      "last_error": null,
+      "notes": ""
+    },
+    {
+      "id": "F002",
+      "description": "Another feature description",
+      "acceptance_criteria": [
+        "Criterion 1",
+        "Criterion 2"
+      ],
+      "status": "pending",
+      "attempts": 0,
+      "last_error": null,
+      "notes": ""
+    }
+  ]
+}

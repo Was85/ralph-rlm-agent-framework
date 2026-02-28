@@ -16,7 +16,8 @@
       "Bash(else echo \"No pages directory\")",
       "Bash(if [ -d \"C:/Alcina/devtoolkit/assets/js/tools\" ])",
       "Bash(then find \"C:/Alcina/devtoolkit/assets/js/tools\" -name \"*.js\" -type f)",
-      "Bash(else echo \"No assets/js/tools directory found\")"
+      "Bash(else echo \"No assets/js/tools directory found\")",
+      "Bash(dir:*)"
     ]
   }
 }

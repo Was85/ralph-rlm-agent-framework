@@ -1,0 +1,11 @@
+{
+  "coverage_percent": 0,
+  "iteration": 0,
+  "status": "not_started",
+  "requirements_found": 0,
+  "requirements_covered": 0,
+  "gaps": [],
+  "features_added": [],
+  "last_updated": null,
+  "notes": "Validation not yet started. Run ./ralph.sh validate"
+}

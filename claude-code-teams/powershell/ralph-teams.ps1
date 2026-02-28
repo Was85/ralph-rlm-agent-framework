@@ -1,25 +1,28 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-    Ralph-RLM-Framework v2.0 (Claude Code CLI Edition - PowerShell)
+    Ralph-RLM-Framework v2.0 Teams Edition (Claude Code CLI - PowerShell)
     Based on Geoffrey Huntley's Ralph Wiggum technique
 
 .DESCRIPTION
-    Three-phase autonomous development:
+    Three-phase autonomous development with parallel team implementation:
       Phase 1: Initialize - PRD -> feature_list.json
       Phase 2: Validate   - Ensure PRD fully covered (loops)
-      Phase 3: Implement  - Build features (loops)
+      Phase 3: Implement  - Build features in parallel (agent teams)
 
 .EXAMPLE
-    .\ralph.ps1 init       # Phase 1: Create features from PRD
-    .\ralph.ps1 validate   # Phase 2: Validate PRD coverage
-    .\ralph.ps1 run        # Phase 3: Implement features
-    .\ralph.ps1 auto       # All phases automatically
-    .\ralph.ps1 status     # Show current state
-    .\ralph.ps1 help       # Show this help
+    .\ralph-teams.ps1 init                # Phase 1: Create features from PRD
+    .\ralph-teams.ps1 validate            # Phase 2: Validate PRD coverage
+    .\ralph-teams.ps1 run                 # Phase 3: Implement with agent teams
+    .\ralph-teams.ps1 run -Teammates 5    # Phase 3: 5 implementers in parallel
+    .\ralph-teams.ps1 auto                # All phases automatically
+    .\ralph-teams.ps1 status              # Show current state
+    .\ralph-teams.ps1 help                # Show this help
 
 .NOTES
     Requires: Claude Code CLI (npm install -g @anthropic-ai/claude-code)
+    Phases 1 & 2 are identical to the sequential variant (ralph.ps1).
+    Phase 3 replaces the PS loop with Claude Code agent teams.
 #>
 
 param(
@@ -37,6 +40,10 @@ param(
 
     [Alias('s')]
     [int]$SleepBetween = 2,
+
+    [int]$Teammates = 3,
+
+    [switch]$SkipReview,
 
     [Alias('v')]
     [switch]$VerboseOutput,
@@ -68,6 +75,8 @@ $script:VERBOSE = $VerboseOutput.IsPresent -or $DebugMode.IsPresent
 $script:DEBUG_MODE = $DebugMode.IsPresent
 $script:ALLOW_ALL_TOOLS = $DangerouslySkipPermissions.IsPresent
 $script:STREAM_OUTPUT = $Stream.IsPresent
+$script:TEAMMATES = $Teammates
+$script:WITH_REVIEWER = -not $SkipReview.IsPresent
 $script:LOG_FILE = "ralph-debug.log"
 
 # ======================================================================
@@ -78,11 +87,11 @@ function Write-Banner {
     Write-Host ""
     Write-Host "==================================================================" -ForegroundColor Blue
     Write-Host "||  " -ForegroundColor Blue -NoNewline
-    Write-Host "RALPH-RLM FRAMEWORK v2.0" -ForegroundColor White -NoNewline
-    Write-Host "                                   ||" -ForegroundColor Blue
+    Write-Host "RALPH-RLM FRAMEWORK v2.0 TEAMS" -ForegroundColor White -NoNewline
+    Write-Host "                            ||" -ForegroundColor Blue
     Write-Host "||  " -ForegroundColor Blue -NoNewline
-    Write-Host "Claude Code CLI Edition (PowerShell)" -ForegroundColor Cyan -NoNewline
-    Write-Host "                      ||" -ForegroundColor Blue
+    Write-Host "Claude Code CLI + Agent Teams (PowerShell)" -ForegroundColor Cyan -NoNewline
+    Write-Host "                ||" -ForegroundColor Blue
     Write-Host "||  Based on Geoffrey Huntley's Ralph Wiggum technique           ||" -ForegroundColor Blue
     Write-Host "==================================================================" -ForegroundColor Blue
     Write-Host ""
@@ -226,6 +235,15 @@ function Show-ContextSummary {
         }
     }
 
+    # Team info
+    Write-Host "  Team config: $script:TEAMMATES implementers" -ForegroundColor White -NoNewline
+    if ($script:WITH_REVIEWER) {
+        Write-Host " + 1 reviewer" -ForegroundColor White
+    }
+    else {
+        Write-Host " (no reviewer)" -ForegroundColor Yellow
+    }
+
     Write-Host ""
     Write-DebugLog "Context summary displayed"
 }
@@ -238,14 +256,14 @@ function Show-Help {
     Write-Banner
 
     Write-Host "USAGE" -ForegroundColor White
-    Write-Host "  .\ralph.ps1 <command> [options]"
+    Write-Host "  .\ralph-teams.ps1 <command> [options]"
     Write-Host ""
 
     Write-Host "COMMANDS" -ForegroundColor White
     Write-Host "  author      Interactive PRD creation assistant"
     Write-Host "  init        Phase 1: Analyze PRD and create feature_list.json"
     Write-Host "  validate    Phase 2: Validate all PRD requirements are covered (loops)"
-    Write-Host "  run         Phase 3: Implement features one by one (loops)"
+    Write-Host "  run         Phase 3: Implement features in parallel (agent teams)"
     Write-Host "  auto        Run all phases automatically"
     Write-Host "  status      Show current project state"
     Write-Host "  help        Show this help message"
@@ -256,6 +274,8 @@ function Show-Help {
     Write-Host "  -MaxValidateIterations N          Max validation iterations (default: 10)"
     Write-Host "  -CoverageThreshold, -c N          Required PRD coverage % (default: 95)"
     Write-Host "  -SleepBetween, -s N               Seconds between iterations (default: 2)"
+    Write-Host "  -Teammates N                      Number of parallel implementer agents (default: 3)"
+    Write-Host "  -SkipReview                       Skip per-feature code review (faster, less safe)"
     Write-Host "  -VerboseOutput, -v                Show context summary and RLM debug info"
     Write-Host "  -DebugMode                        Enable Claude Code debug-level tracing (implies -VerboseOutput)"
     Write-Host "  -DangerouslySkipPermissions       Full tool access with deny rules (less safe, faster)"
@@ -264,38 +284,35 @@ function Show-Help {
 
     Write-Host "WORKFLOW" -ForegroundColor White
     Write-Host ""
-    Write-Host "  +-------------+     +-------------+     +-------------+"
-    Write-Host "  |   prd.md    | --> |  INIT       | --> |  VALIDATE   |"
-    Write-Host "  | (you write) |     |  (once)     |     |  (loops)    |"
-    Write-Host "  +-------------+     +-------------+     +------+------+"
-    Write-Host "                                                 |"
-    Write-Host "                                                 v"
-    Write-Host "                                          +-------------+"
-    Write-Host "                                          |  IMPLEMENT  |"
-    Write-Host "                                          |  (loops)    |"
-    Write-Host "                                          +-------------+"
+    Write-Host "  +-------------+     +-------------+     +-----------------+"
+    Write-Host "  |   prd.md    | --> |  INIT       | --> |  VALIDATE       |"
+    Write-Host "  | (you write) |     |  (once)     |     |  (loops)        |"
+    Write-Host "  +-------------+     +-------------+     +--------+--------+"
+    Write-Host "                                                   |"
+    Write-Host "                                                   v"
+    Write-Host "                                          +-----------------+"
+    Write-Host "                                          |  TEAM IMPLEMENT |"
+    Write-Host "                                          |  (parallel)     |"
+    Write-Host "                                          +-----------------+"
+    Write-Host "                                          | Lead + N impl.  |"
+    Write-Host "                                          | + 1 reviewer    |"
+    Write-Host "                                          +-----------------+"
     Write-Host ""
 
     Write-Host "QUICK START" -ForegroundColor White
-    Write-Host "  1. Run: .\ralph.ps1 author    (get help writing your PRD)"
+    Write-Host "  1. Run: .\ralph-teams.ps1 author    (get help writing your PRD)"
     Write-Host "  2. Write your requirements in prd.md"
-    Write-Host "  3. Run: .\ralph.ps1 auto"
+    Write-Host "  3. Run: .\ralph-teams.ps1 auto"
     Write-Host "  4. Go make coffee"
     Write-Host ""
 
     Write-Host "EXAMPLES" -ForegroundColor White
-    Write-Host "  .\ralph.ps1 author                                          # Get help writing your PRD"
-    Write-Host "  .\ralph.ps1 auto                                            # Run everything"
-    Write-Host "  .\ralph.ps1 auto -v                                         # Run with context summary"
-    Write-Host "  .\ralph.ps1 init                                            # Just create features"
-    Write-Host "  .\ralph.ps1 validate                                        # Just validate coverage"
-    Write-Host "  .\ralph.ps1 run                                             # Just implement"
-    Write-Host "  .\ralph.ps1 run -m 10                                       # Run with max 10 iterations"
-    Write-Host "  .\ralph.ps1 run -MaxIterations 100                          # Run with max 100 iterations"
-    Write-Host "  .\ralph.ps1 validate -c 90                                  # Validate with 90% threshold"
-    Write-Host "  .\ralph.ps1 run -v                                          # Run with verbose/debug output"
-    Write-Host "  .\ralph.ps1 run -DangerouslySkipPermissions                 # Full tool access (less safe)"
-    Write-Host "  .\ralph.ps1 auto -DangerouslySkipPermissions -DebugMode     # Full access + debug tracing"
+    Write-Host "  .\ralph-teams.ps1 auto                                            # Run everything (3 implementers + reviewer)"
+    Write-Host "  .\ralph-teams.ps1 auto -Teammates 5                               # Run with 5 parallel implementers"
+    Write-Host "  .\ralph-teams.ps1 run -Teammates 2 -SkipReview                    # Fast mode: 2 implementers, no review"
+    Write-Host "  .\ralph-teams.ps1 auto -v                                         # Run with context summary"
+    Write-Host "  .\ralph-teams.ps1 run -DangerouslySkipPermissions                 # Full tool access"
+    Write-Host "  .\ralph-teams.ps1 auto -DangerouslySkipPermissions -DebugMode     # Full access + debug tracing"
     Write-Host ""
 
     Write-Host "FILES" -ForegroundColor White
@@ -307,8 +324,16 @@ function Show-Help {
 
     Write-Host "FRAMEWORK DIRECTORIES" -ForegroundColor White
     Write-Host "  .claude\skills\       Auto-discovered skill definitions and scripts"
-    Write-Host "  .claude\skills\ralph\ Core Ralph loop skills"
+    Write-Host "  .claude\skills\ralph\ Core Ralph loop skills (with mutex locking)"
     Write-Host "  .claude\rules\        Auto-loaded coding rules (by file pattern)"
+    Write-Host ""
+
+    Write-Host "DIFFERENCES FROM SEQUENTIAL (ralph.ps1)" -ForegroundColor White
+    Write-Host "  - Phase 3 uses agent teams instead of a PowerShell loop"
+    Write-Host "  - Multiple features implemented simultaneously"
+    Write-Host "  - Named mutex protects feature_list.json from concurrent writes"
+    Write-Host "  - claim-feature.ps1 prevents double-claiming"
+    Write-Host "  - Mandatory per-feature code review (unless -SkipReview)"
     Write-Host ""
 
     Write-Host "LEARN MORE" -ForegroundColor White
@@ -370,7 +395,7 @@ function Test-Preflight {
 
             if (-not (Test-Path "feature_list.json")) {
                 Write-RalphError "feature_list.json not found!"
-                Write-Host "       Run '.\ralph.ps1 init' first." -ForegroundColor Gray
+                Write-Host "       Run '.\ralph-teams.ps1 init' first." -ForegroundColor Gray
                 return $false
             }
             Write-RalphSuccess "feature_list.json found"
@@ -385,17 +410,17 @@ function Test-Preflight {
         'run' {
             if (-not (Test-Path "feature_list.json")) {
                 Write-RalphError "feature_list.json not found!"
-                Write-Host "       Run '.\ralph.ps1 init' first." -ForegroundColor Gray
+                Write-Host "       Run '.\ralph-teams.ps1 init' first." -ForegroundColor Gray
                 return $false
             }
             Write-RalphSuccess "feature_list.json found"
 
-            $implPrompt = Join-Path $PromptsDir "implementer.md"
-            if (-not (Test-Path $implPrompt)) {
-                Write-RalphError "implementer.md not found!"
+            $teamLeadPrompt = Join-Path $PromptsDir "team-lead.md"
+            if (-not (Test-Path $teamLeadPrompt)) {
+                Write-RalphError "team-lead.md not found!"
                 return $false
             }
-            Write-RalphSuccess "implementer.md found"
+            Write-RalphSuccess "team-lead.md found"
 
             if (-not (Test-Path "claude-progress.txt")) {
                 Write-RalphWarning "claude-progress.txt not found, creating..."
@@ -414,7 +439,11 @@ function Test-Preflight {
 # ======================================================================
 
 function Invoke-Claude {
-    param([string]$Prompt)
+    param(
+        [string]$Prompt,
+        [int]$MaxTurns = 0,
+        [int]$TimeoutMinutes = 0
+    )
 
     $flags = Get-ClaudeFlags
 
@@ -438,18 +467,87 @@ function Invoke-Claude {
 
     try {
         $shortPrompt = "Read the file .ralph-prompt-temp.md in the current directory and follow ALL instructions in it exactly. Do not skip any steps."
+
         $allArgs = @()
         $allArgs += $flags
+        if ($MaxTurns -gt 0) {
+            $allArgs += "--max-turns"
+            $allArgs += "$MaxTurns"
+            Write-DebugLog "Max turns: $MaxTurns"
+        }
         $allArgs += "-p"
         $allArgs += $shortPrompt
 
-        & claude @allArgs
+        if ($TimeoutMinutes -gt 0) {
+            # Run with process-level timeout. This is the only bulletproof way
+            # to prevent the team lead from hanging indefinitely — prompt-level
+            # fixes and --max-turns are not reliable enough because teammate
+            # messages keep generating new turns in agent teams mode.
+            $deadline = (Get-Date).AddMinutes($TimeoutMinutes)
+            Write-DebugLog "Process timeout: $TimeoutMinutes minutes (deadline: $($deadline.ToString('HH:mm:ss')))"
 
-        return $LASTEXITCODE
+            $psi = New-Object System.Diagnostics.ProcessStartInfo
+            $psi.FileName = "claude"
+            $psi.Arguments = ($allArgs | ForEach-Object { if ($_ -match '\s') { "`"$_`"" } else { $_ } }) -join ' '
+            $psi.UseShellExecute = $false
+            $psi.WorkingDirectory = (Get-Location).Path
+
+            $proc = [System.Diagnostics.Process]::Start($psi)
+            Write-DebugLog "Claude PID: $($proc.Id)"
+
+            # Poll for exit. Smart early-exit: once all features are done in
+            # feature_list.json, give a short grace period for cleanup, then kill.
+            # This avoids waiting the full timeout when work is already complete.
+            $allDoneAt = $null
+            $gracePeriodSeconds = 60
+
+            while (-not $proc.HasExited) {
+                # Hard timeout — absolute safety net
+                if ((Get-Date) -gt $deadline) {
+                    Write-RalphWarning "Claude process timed out after $TimeoutMinutes minutes — killing"
+                    try { taskkill /PID $proc.Id /T /F 2>$null } catch { $proc.Kill() }
+                    break
+                }
+
+                # Smart exit: check if all features are done
+                if (-not $allDoneAt) {
+                    try {
+                        $featureData = Get-Content "feature_list.json" -Raw -ErrorAction Stop | ConvertFrom-Json
+                        $remaining = @($featureData.features | Where-Object { $_.status -eq 'pending' -or $_.status -eq 'in_progress' }).Count
+                        if ($remaining -eq 0) {
+                            $allDoneAt = Get-Date
+                            Write-RalphInfo "All features complete — giving ${gracePeriodSeconds}s grace for team cleanup..."
+                        }
+                    }
+                    catch { }
+                }
+                elseif ((Get-Date) -gt $allDoneAt.AddSeconds($gracePeriodSeconds)) {
+                    Write-RalphWarning "Grace period expired — killing team lead process"
+                    try { taskkill /PID $proc.Id /T /F 2>$null } catch { $proc.Kill() }
+                    break
+                }
+
+                Start-Sleep -Seconds 5
+            }
+
+            if ($proc.HasExited) {
+                $LASTEXITCODE = $proc.ExitCode
+                Write-DebugLog "Claude exited with code $LASTEXITCODE"
+            }
+            else {
+                $LASTEXITCODE = 1
+            }
+        }
+        else {
+            # No timeout — blocking call (used for phases 1 and 2)
+            & claude @allArgs
+        }
     }
     finally {
         Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
     }
+
+    return $LASTEXITCODE
 }
 
 # ======================================================================
@@ -574,26 +672,28 @@ function Start-Author {
     # Read skill content, stripping YAML frontmatter
     $skillContent = Get-SkillContent -Path $skillFile
 
-    $fullPrompt = @"
-$skillContent
+    $suffix = "`nYou are helping the user create a prd.md for Ralph-RLM-Framework.`n"
+    $suffix += "If a prd.md template exists at templates\prd.md, use it as the output structure.`n"
+    $suffix += "Guide the user through each phase described above.`n"
+    $suffix += "Save the final result as prd.md in the current directory.`n"
+    $suffix += "Start by asking the user about their project (Phase 1: Project Understanding).`n"
 
-You are helping the user create a prd.md for Ralph-RLM-Framework.
-
-If a prd.md template exists at templates\prd.md, use it as the output structure.
-Guide the user through each phase described above.
-Save the final result as prd.md in the current directory.
-
-Start by asking the user about their project (Phase 1: Project Understanding).
-"@
+    $fullPrompt = "$skillContent`n$suffix"
+    $authorTempFile = Join-Path (Get-Location).Path ".ralph-author-prompt.md"
+    [System.IO.File]::WriteAllText($authorTempFile, $fullPrompt, (New-Object System.Text.UTF8Encoding $false))
 
     # Use interactive mode (no -p flag) so the user can answer questions
+    $shortPrompt = "Read the file .ralph-author-prompt.md in the current directory and follow ALL instructions in it exactly."
     $flags = Get-ClaudeFlags
     if ($flags.Count -gt 0) {
-        & claude @flags $fullPrompt
+        & claude @flags $shortPrompt
     }
     else {
-        & claude $fullPrompt
+        & claude $shortPrompt
     }
+
+    # Clean up temp file
+    Remove-Item $authorTempFile -Force -ErrorAction SilentlyContinue
 
     if (Test-Path "prd.md") {
         Write-Host ""
@@ -601,7 +701,7 @@ Start by asking the user about their project (Phase 1: Project Understanding).
         Write-Host ""
         Write-Host "Next steps:"
         Write-Host "  1. Review prd.md"
-        Write-Host "  2. Run: .\ralph.ps1 auto"
+        Write-Host "  2. Run: .\ralph-teams.ps1 auto"
     }
     else {
         Write-RalphWarning "prd.md was not created. You can create it manually using templates\prd.md"
@@ -652,7 +752,7 @@ Read the project requirements from: prd.md
             Write-RalphInfo "Created $featureCount features in feature_list.json"
             Write-DebugLog "Init complete: $featureCount features created"
             Write-Host ""
-            Write-Host "Next step: .\ralph.ps1 validate"
+            Write-Host "Next step: .\ralph-teams.ps1 validate"
         }
         catch {
             Write-Host ""
@@ -729,7 +829,7 @@ Read these files from the current directory:
                     Write-Host ""
                     Write-RalphSuccess "Validation complete! Coverage: $coverage%"
                     Write-Host ""
-                    Write-Host "Next step: .\ralph.ps1 run"
+                    Write-Host "Next step: .\ralph-teams.ps1 run"
                     return 0
                 }
 
@@ -760,12 +860,169 @@ Read these files from the current directory:
 }
 
 # ======================================================================
-# Phase 3: Implement (Ralph Loop)
+# Live Progress Snapshot
 # ======================================================================
 
-function Start-Implement {
-    Write-Phase "PHASE 3: IMPLEMENT FEATURES (RALPH LOOP)"
-    Write-Host "Implementing features one by one until complete..."
+function Show-ImplementProgress {
+    <#
+    .SYNOPSIS
+        Print a one-line progress snapshot from feature_list.json.
+        Called before/after each iteration for visibility.
+    #>
+    if (-not (Test-Path "feature_list.json")) { return }
+
+    try {
+        $data = Get-Content "feature_list.json" -Raw | ConvertFrom-Json
+        $total      = @($data.features).Count
+        $complete   = @($data.features | Where-Object { $_.status -eq "complete" }).Count
+        $inProgress = @($data.features | Where-Object { $_.status -eq "in_progress" })
+        $blocked    = @($data.features | Where-Object { $_.status -eq "blocked" }).Count
+        $pending    = @($data.features | Where-Object { $_.status -eq "pending" }).Count
+
+        $ts = Get-Date -Format "HH:mm:ss"
+        $percent = 0
+        if ($total -gt 0) { $percent = [math]::Floor(($complete / $total) * 100) }
+
+        # Build active workers string
+        $workers = ""
+        if ($inProgress.Count -gt 0) {
+            $workerParts = @()
+            foreach ($f in $inProgress) {
+                $who = if ($f.claimed_by) { $f.claimed_by } else { "?" }
+                $workerParts += "$($who):$($f.id)"
+            }
+            $workers = " | active: $($workerParts -join ', ')"
+        }
+
+        Write-Host "[$ts] " -ForegroundColor DarkGray -NoNewline
+        Write-Host "$complete/$total" -ForegroundColor Green -NoNewline
+        Write-Host " complete ($percent%)" -NoNewline
+        Write-Host " | " -NoNewline
+        Write-Host "$($inProgress.Count) in-progress" -ForegroundColor Yellow -NoNewline
+        Write-Host " | " -NoNewline
+        Write-Host "$pending pending" -ForegroundColor Blue -NoNewline
+        Write-Host " | " -NoNewline
+        Write-Host "$blocked blocked" -ForegroundColor Red -NoNewline
+        Write-Host "$workers" -ForegroundColor DarkGray
+    }
+    catch {
+        Write-DebugLog "Show-ImplementProgress failed: $_"
+    }
+}
+
+# ======================================================================
+# Post-Run Report
+# ======================================================================
+
+function Show-PostRunReport {
+    <#
+    .SYNOPSIS
+        Display a detailed post-run report after Phase 3 completes.
+        Shows completed, blocked, and in-progress features with details.
+    #>
+    if (-not (Test-Path "feature_list.json")) {
+        return
+    }
+
+    try {
+        $data = Get-Content "feature_list.json" -Raw | ConvertFrom-Json
+    }
+    catch {
+        Write-RalphWarning "Could not parse feature_list.json for report"
+        return
+    }
+
+    $total      = @($data.features).Count
+    $complete   = @($data.features | Where-Object { $_.status -eq "complete" })
+    $blocked    = @($data.features | Where-Object { $_.status -eq "blocked" })
+    $inProgress = @($data.features | Where-Object { $_.status -eq "in_progress" })
+    $pending    = @($data.features | Where-Object { $_.status -eq "pending" })
+
+    Write-Host ""
+    Write-Host "================================================================" -ForegroundColor Cyan
+    Write-Host "  POST-RUN REPORT" -ForegroundColor White
+    Write-Host "================================================================" -ForegroundColor Cyan
+    Write-Host ""
+
+    # Summary bar
+    $completeCount = $complete.Count
+    $blockedCount = $blocked.Count
+    $inProgressCount = $inProgress.Count
+    $pendingCount = $pending.Count
+    $percent = 0
+    if ($total -gt 0) { $percent = [math]::Floor(($completeCount / $total) * 100) }
+
+    Write-Host "  Summary: " -NoNewline
+    Write-Host "$completeCount complete" -ForegroundColor Green -NoNewline
+    Write-Host " | " -NoNewline
+    Write-Host "$inProgressCount in-progress" -ForegroundColor Yellow -NoNewline
+    Write-Host " | " -NoNewline
+    Write-Host "$pendingCount pending" -ForegroundColor Blue -NoNewline
+    Write-Host " | " -NoNewline
+    Write-Host "$blockedCount blocked" -ForegroundColor Red -NoNewline
+    Write-Host "  ($percent% done)"
+    Write-Host ""
+
+    # Completed features
+    if ($completeCount -gt 0) {
+        Write-Host "  COMPLETED ($completeCount)" -ForegroundColor Green
+        foreach ($f in $complete) {
+            $claimedBy = "-"
+            if ($f.claimed_by) { $claimedBy = $f.claimed_by }
+            $attempts = 1
+            if ($f.attempts) { $attempts = $f.attempts }
+            Write-Host "    $($f.id): $($f.description)" -ForegroundColor Gray -NoNewline
+            Write-Host "  [by: $claimedBy, attempts: $attempts]" -ForegroundColor DarkGray
+        }
+        Write-Host ""
+    }
+
+    # Blocked features
+    if ($blockedCount -gt 0) {
+        Write-Host "  BLOCKED ($blockedCount)" -ForegroundColor Red
+        foreach ($f in $blocked) {
+            $claimedBy = "-"
+            if ($f.claimed_by) { $claimedBy = $f.claimed_by }
+            $lastError = "-"
+            if ($f.last_error) {
+                $lastError = $f.last_error
+                if ($lastError.Length -gt 80) { $lastError = $lastError.Substring(0, 77) + "..." }
+            }
+            Write-Host "    $($f.id): $($f.description)" -ForegroundColor Gray
+            Write-Host "      by: $claimedBy | error: $lastError" -ForegroundColor DarkGray
+        }
+        Write-Host ""
+    }
+
+    # In-progress features (may indicate crashed teammates)
+    if ($inProgressCount -gt 0) {
+        Write-Host "  IN-PROGRESS ($inProgressCount) - may indicate crashed teammates" -ForegroundColor Yellow
+        foreach ($f in $inProgress) {
+            $claimedBy = "-"
+            if ($f.claimed_by) { $claimedBy = $f.claimed_by }
+            Write-Host "    $($f.id): $($f.description)" -ForegroundColor Gray -NoNewline
+            Write-Host "  [claimed by: $claimedBy]" -ForegroundColor DarkGray
+        }
+        Write-Host ""
+    }
+
+    Write-Host "================================================================" -ForegroundColor Cyan
+    Write-Host ""
+}
+
+# ======================================================================
+# Phase 3: Team Implement (Agent Teams)
+# ======================================================================
+
+function Start-TeamImplement {
+    Write-Phase "PHASE 3: IMPLEMENT FEATURES (AGENT TEAMS)"
+    Write-Host "Implementing features in parallel with $script:TEAMMATES implementers..."
+    if ($script:WITH_REVIEWER) {
+        Write-Host "Per-feature code review: ENABLED" -ForegroundColor Green
+    }
+    else {
+        Write-Host "Per-feature code review: DISABLED (SkipReview)" -ForegroundColor Yellow
+    }
     Write-Host ""
 
     if (-not (Test-Preflight 'run')) {
@@ -774,11 +1031,9 @@ function Start-Implement {
     Show-ContextSummary
 
     # Safety checkpoint
-    git stash push -m "ralph-pre-implement-$(Get-Date -Format 'yyyyMMddHHmmss')" --include-untracked 2>$null
+    git stash push -m "ralph-pre-team-implement-$(Get-Date -Format 'yyyyMMddHHmmss')" --include-untracked 2>$null
 
-    $iteration = 0
-
-    # Pre-loop check: are there any features to work on?
+    # Pre-check: are there any features to work on?
     try {
         $features = Get-Content "feature_list.json" -Raw | ConvertFrom-Json
         $remaining = @($features.features | Where-Object { $_.status -eq "pending" -or $_.status -eq "in_progress" }).Count
@@ -801,105 +1056,143 @@ function Start-Implement {
         return 1
     }
 
-    while ($iteration -lt $script:MAX_IMPLEMENT_ITERATIONS) {
-        Write-Host ""
-        Write-Host "--- Implementation Iteration $($iteration + 1) of $script:MAX_IMPLEMENT_ITERATIONS ---" -ForegroundColor Cyan
-        Write-Host "    $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor Cyan
-        Write-DebugLog "Implementation iteration $($iteration + 1) starting"
-        Write-Host ""
+    $phaseStart = Get-Date
+    $iteration = 0
 
-        # Windows NUL file cleanup: Claude Code on Windows can create a literal 'nul' file
-        # (Windows reserved device name) which breaks git operations. Remove it if present.
+    while ($iteration -lt $script:MAX_IMPLEMENT_ITERATIONS) {
+        # Windows NUL file cleanup
         if (Test-Path "nul" -ErrorAction SilentlyContinue) {
             Remove-Item "nul" -Force -ErrorAction SilentlyContinue
             Write-DebugLog "Removed stale 'nul' file (Windows Claude Code bug)"
         }
 
-        # Build the prompt
-        $implPromptPath = Join-Path $PromptsDir "implementer.md"
-        Write-DebugLog "Loading prompt from: $implPromptPath"
-
-        if (-not (Test-Path $implPromptPath)) {
-            Write-RalphError "Prompt file not found: $implPromptPath"
-            return 1
-        }
-
-        $implPrompt = Get-Content $implPromptPath -Raw
-        Write-DebugLog "Prompt loaded: $($implPrompt.Length) chars, first 100: $($implPrompt.Substring(0, [Math]::Min(100, $implPrompt.Length)))"
-
-        # Run Claude (capture exit code)
-        $exitCode = Invoke-Claude -Prompt $implPrompt
-
-        if ($exitCode -ne 0) {
-            Write-RalphWarning "Claude exited with code $exitCode"
-            Write-DebugLog "Claude exited with code $exitCode"
-        }
-
-        # Safety net: recalculate .stats from actual feature statuses
-        # (in case Claude edited feature_list.json directly instead of using companion scripts)
-        Repair-FeatureStats
-
-        # Data-driven completion check: query feature_list.json directly
+        # Check remaining features at top of each iteration
         try {
             $features = Get-Content "feature_list.json" -Raw | ConvertFrom-Json
+            $remaining    = @($features.features | Where-Object { $_.status -eq "pending" -or $_.status -eq "in_progress" }).Count
             $total        = @($features.features).Count
             $complete     = @($features.features | Where-Object { $_.status -eq "complete" }).Count
-            $remaining    = @($features.features | Where-Object { $_.status -eq "pending" -or $_.status -eq "in_progress" }).Count
             $blockedCount = @($features.features | Where-Object { $_.status -eq "blocked" }).Count
         }
         catch {
             Write-RalphWarning "Failed to parse feature_list.json: $_"
-            $total = 0
-            $complete = 0
-            $remaining = -1
-            $blockedCount = 0
+            $iteration++
+            continue
         }
 
-        Write-DebugLog "Status: $complete/$total complete, $remaining remaining, $blockedCount blocked"
-
-        # Sanity check: if total is 0, feature_list.json is corrupted
-        if ($total -eq 0) {
-            Write-RalphWarning "feature_list.json appears corrupted (0 features found). Stopping loop."
-            Write-RalphInfo "Check feature_list.json for valid JSON structure."
-            return 1
-        }
-
-        # All features complete (none pending or in_progress, none blocked)
+        # Exit conditions
         if ($remaining -eq 0 -and $blockedCount -eq 0) {
             Write-Host ""
             Write-Host "==================================================================" -ForegroundColor Green
             Write-Host "||  ALL FEATURES COMPLETE!  ($complete/$total)" -ForegroundColor Green
-            Write-Host "||     Total iterations: $($iteration + 1)" -ForegroundColor Green
             Write-Host "==================================================================" -ForegroundColor Green
             Write-Host ""
-            Write-DebugLog "ALL FEATURES COMPLETE after $($iteration + 1) iterations"
+            $phaseElapsed = (Get-Date) - $phaseStart
+            Write-RalphInfo "Phase 3 elapsed: $($phaseElapsed.ToString('hh\:mm\:ss')) ($($iteration) iteration(s))"
+            Show-PostRunReport
             return 0
         }
 
-        # No work left but some features are blocked
         if ($remaining -eq 0 -and $blockedCount -gt 0) {
             Write-Host ""
             Write-Host "==================================================================" -ForegroundColor Yellow
             Write-Host "||  BLOCKED - Human intervention needed" -ForegroundColor Yellow
             Write-Host "||     $complete/$total complete, $blockedCount blocked" -ForegroundColor Yellow
-            Write-Host "||     Check feature_list.json for blocked features" -ForegroundColor Yellow
             Write-Host "==================================================================" -ForegroundColor Yellow
             Write-Host ""
-            Write-DebugLog "BLOCKED at iteration $($iteration + 1): $blockedCount features blocked"
+            $phaseElapsed = (Get-Date) - $phaseStart
+            Write-RalphInfo "Phase 3 elapsed: $($phaseElapsed.ToString('hh\:mm\:ss')) ($($iteration) iteration(s))"
+            Show-PostRunReport
             return 2
         }
+
+        # Iteration header
+        Write-Host ""
+        Write-Host "--- Implementation Iteration $($iteration + 1) of $script:MAX_IMPLEMENT_ITERATIONS ---" -ForegroundColor Cyan
+        Write-DebugLog "Implementation iteration $($iteration + 1) starting ($remaining remaining)"
+        Write-Host ""
+
+        # Progress snapshot (before)
+        Show-ImplementProgress
+
+        # Build the team-lead prompt with current state
+        $teamLeadPromptPath = Join-Path $PromptsDir "team-lead.md"
+        $teamLeadPrompt = Get-Content $teamLeadPromptPath -Raw
+
+        $config = "`n## Configuration`n"
+        $config += "- Teammates: $script:TEAMMATES`n"
+        $config += "- WithReviewer: $script:WITH_REVIEWER`n"
+        $config += "- Remaining features: $remaining`n"
+        $config += "- Prompts directory: $PromptsDir`n"
+        $config += "- Working directory: $(Get-Location)`n"
+        $config += "- Iteration: $($iteration + 1) of $script:MAX_IMPLEMENT_ITERATIONS`n"
+
+        $fullPrompt = "$teamLeadPrompt`n$config"
+
+        Write-RalphInfo "Launching team lead agent..."
+        Write-RalphInfo "The team lead will spawn $script:TEAMMATES implementer teammates"
+        if ($script:WITH_REVIEWER) {
+            Write-RalphInfo "A reviewer teammate will review each feature before marking it complete"
+        }
+        Write-Host ""
+
+        $iterStart = Get-Date
+
+        # Run team lead via Invoke-Claude (-p mode).
+        # Claude in -p mode can still use TeamCreate, Task, SendMessage etc.
+        # through multi-turn tool usage. It runs the full workflow and exits.
+        # Max turns = 50 base (setup: create team, tasks, spawn, shutdown) + 5 per feature
+        # (monitoring messages per feature). This provides a soft ceiling alongside the
+        # hard process timeout below. The outer while-loop retries if work remains.
+        $maxTurns = 50 + ($remaining * 5)
+
+        # Process timeout = 5 min base + 2 min per feature. This is the bulletproof
+        # kill switch — if the team lead hangs in monitoring or shutdown (common with
+        # agent teams), the process gets forcefully terminated and the outer loop retries.
+        $timeoutMin = 5 + ($remaining * 2)
+        Write-DebugLog "Team lead: max-turns=$maxTurns, timeout=${timeoutMin}m"
+        Invoke-Claude -Prompt $fullPrompt -MaxTurns $maxTurns -TimeoutMinutes $timeoutMin
+
+        $iterElapsed = (Get-Date) - $iterStart
+
+        # Post-iteration: repair stats and show progress
+        Repair-FeatureStats
+
+        Write-Host ""
+        Write-RalphInfo "Iteration $($iteration + 1) elapsed: $($iterElapsed.ToString('hh\:mm\:ss'))"
+
+        # Progress snapshot (after)
+        Show-ImplementProgress
 
         $iteration++
 
         if ($iteration -lt $script:MAX_IMPLEMENT_ITERATIONS) {
-            Write-RalphInfo "Progress: $complete/$total complete, $remaining remaining. Next in $script:SLEEP_BETWEEN seconds... (Ctrl+C to stop)"
+            Write-RalphInfo "Checking for remaining features..."
             Start-Sleep -Seconds $script:SLEEP_BETWEEN
         }
     }
 
+    # Max iterations reached
     Write-Host ""
-    Write-RalphWarning "Max iterations reached ($script:MAX_IMPLEMENT_ITERATIONS)"
-    Write-RalphInfo "Progress: $complete/$total complete, $remaining remaining"
+    Write-RalphWarning "Max implementation iterations reached ($script:MAX_IMPLEMENT_ITERATIONS)"
+    $phaseElapsed = (Get-Date) - $phaseStart
+    Write-RalphInfo "Phase 3 elapsed: $($phaseElapsed.ToString('hh\:mm\:ss')) ($iteration iteration(s))"
+    Repair-FeatureStats
+    Show-PostRunReport
+
+    try {
+        $features = Get-Content "feature_list.json" -Raw | ConvertFrom-Json
+        $total        = @($features.features).Count
+        $complete     = @($features.features | Where-Object { $_.status -eq "complete" }).Count
+        $remaining    = @($features.features | Where-Object { $_.status -eq "pending" -or $_.status -eq "in_progress" }).Count
+        $blockedCount = @($features.features | Where-Object { $_.status -eq "blocked" }).Count
+    }
+    catch {
+        Write-RalphWarning "Failed to parse feature_list.json: $_"
+        return 1
+    }
+
+    Write-RalphInfo "Final: $complete/$total complete, $remaining remaining, $blockedCount blocked"
     return 1
 }
 
@@ -910,11 +1203,16 @@ function Start-Implement {
 function Start-Auto {
     Write-Banner
 
+    $autoStart = Get-Date
+
     Write-Host "Running all phases automatically..." -ForegroundColor White
     Write-Host ""
     Write-Host "  Phase 1: Initialize (PRD -> features)"
     Write-Host "  Phase 2: Validate (ensure coverage)"
-    Write-Host "  Phase 3: Implement (build features)"
+    Write-Host "  Phase 3: Team Implement ($script:TEAMMATES parallel implementers)"
+    if ($script:WITH_REVIEWER) {
+        Write-Host "           + per-feature code review"
+    }
     Write-Host ""
     Write-Host "Press Ctrl+C at any time to stop" -ForegroundColor Yellow
     Start-Sleep -Seconds 3
@@ -957,8 +1255,33 @@ function Start-Auto {
         Write-RalphInfo "Validation already complete, skipping validate phase"
     }
 
-    # Phase 3: Implement
-    Start-Implement
+    # Phase 3: Team Implement
+    $implResult = Start-TeamImplement
+
+    $autoElapsed = (Get-Date) - $autoStart
+    Write-Host ""
+
+    if ($implResult -eq 0) {
+        Write-Host "================================================================" -ForegroundColor Green
+        Write-Host "  RALPH COMPLETE - All features implemented successfully" -ForegroundColor Green
+        Write-Host "  Total elapsed: $($autoElapsed.ToString('hh\:mm\:ss'))" -ForegroundColor White
+        Write-Host "================================================================" -ForegroundColor Green
+    }
+    elseif ($implResult -eq 2) {
+        Write-Host "================================================================" -ForegroundColor Yellow
+        Write-Host "  RALPH BLOCKED - Some features need human intervention" -ForegroundColor Yellow
+        Write-Host "  Total elapsed: $($autoElapsed.ToString('hh\:mm\:ss'))" -ForegroundColor White
+        Write-Host "================================================================" -ForegroundColor Yellow
+    }
+    else {
+        Write-Host "================================================================" -ForegroundColor Red
+        Write-Host "  RALPH INCOMPLETE - Features remain after max iterations" -ForegroundColor Red
+        Write-Host "  Total elapsed: $($autoElapsed.ToString('hh\:mm\:ss'))" -ForegroundColor White
+        Write-Host "  Re-run: .\ralph-teams.ps1 run" -ForegroundColor Gray
+        Write-Host "================================================================" -ForegroundColor Red
+    }
+
+    Write-Host ""
 }
 
 # ======================================================================
@@ -1004,13 +1327,23 @@ function Show-Status {
                 Write-Host ""
                 Write-Host "  Progress: $percent%"
             }
+
+            # Show claimed_by info if any
+            $claimed = @($features.features | Where-Object { $_.claimed_by }).Count
+            if ($claimed -gt 0) {
+                Write-Host ""
+                Write-Host "  Claimed by teammates: $claimed"
+                $features.features | Where-Object { $_.claimed_by } | ForEach-Object {
+                    Write-Host "    $($_.id): $($_.claimed_by) ($($_.status))" -ForegroundColor Gray
+                }
+            }
         }
         catch {
             Write-RalphError "feature_list.json exists but could not be parsed"
         }
     }
     else {
-        Write-RalphWarning "feature_list.json not found (run .\ralph.ps1 init)"
+        Write-RalphWarning "feature_list.json not found (run .\ralph-teams.ps1 init)"
     }
 
     Write-Host ""
@@ -1028,7 +1361,7 @@ function Show-Status {
         }
     }
     else {
-        Write-RalphWarning "validation-state.json not found (run .\ralph.ps1 validate)"
+        Write-RalphWarning "validation-state.json not found (run .\ralph-teams.ps1 validate)"
     }
 
     Write-Host ""
@@ -1050,17 +1383,17 @@ function Show-Status {
         Write-Host "  -> Create prd.md with your requirements"
     }
     elseif (-not (Test-Path "feature_list.json")) {
-        Write-Host "  -> Run: .\ralph.ps1 init"
+        Write-Host "  -> Run: .\ralph-teams.ps1 init"
     }
     elseif (-not (Test-Path "validation-state.json") -or
             ((Get-Content "validation-state.json" -Raw | ConvertFrom-Json).status -ne "complete")) {
-        Write-Host "  -> Run: .\ralph.ps1 validate"
+        Write-Host "  -> Run: .\ralph-teams.ps1 validate"
     }
     elseif ($blocked -gt 0 -and $pending -eq 0 -and $inProgress -eq 0) {
-        Write-Host "  -> $blocked feature(s) blocked. Fix in feature_list.json, then: .\ralph.ps1 run"
+        Write-Host "  -> $blocked feature(s) blocked. Fix in feature_list.json, then: .\ralph-teams.ps1 run"
     }
     elseif ($pending -gt 0 -or $inProgress -gt 0) {
-        Write-Host "  -> Run: .\ralph.ps1 run"
+        Write-Host "  -> Run: .\ralph-teams.ps1 run"
     }
     else {
         Write-Host "  -> All done!"
@@ -1077,8 +1410,8 @@ switch ($Command) {
     'author'    { Start-Author }
     'init'      { Start-Init }
     'validate'  { Start-Validate }
-    'run'       { Start-Implement }
-    'implement' { Start-Implement }
+    'run'       { Start-TeamImplement }
+    'implement' { Start-TeamImplement }
     'auto'      { Start-Auto }
     'status'    { Show-Status }
     'help'      { Show-Help }
