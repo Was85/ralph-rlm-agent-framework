@@ -723,7 +723,7 @@ function Start-Init {
     Show-ContextSummary
 
     # Create safety checkpoint
-    git stash push -m "ralph-pre-init-$(Get-Date -Format 'yyyyMMddHHmmss')" --include-untracked 2>$null
+    git stash push -m "ralph-pre-init-$(Get-Date -Format 'yyyyMMddHHmmss')" --include-untracked 2>$null | Out-Null
 
     Write-DebugLog "Starting initializer agent"
 
@@ -1031,7 +1031,7 @@ function Start-TeamImplement {
     Show-ContextSummary
 
     # Safety checkpoint
-    git stash push -m "ralph-pre-team-implement-$(Get-Date -Format 'yyyyMMddHHmmss')" --include-untracked 2>$null
+    git stash push -m "ralph-pre-team-implement-$(Get-Date -Format 'yyyyMMddHHmmss')" --include-untracked 2>$null | Out-Null
 
     # Pre-check: are there any features to work on?
     try {
