@@ -1,6 +1,6 @@
 {
   "name": "@alcinanet/ralph-rlm",
-  "version": "3.0.8",
+  "version": "3.1.0",
   "description": "Ralph-RLM Framework — AI-driven autonomous development orchestrator. Three-phase iterative coding: PRD -> features -> implementation. Supports Claude Code and GitHub Copilot.",
   "type": "module",
   "main": "./dist/cli.js",
