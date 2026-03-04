@@ -33,6 +33,15 @@ export function banner(): void {
   console.log('');
 }
 
+export function feature(id: string, description: string, progress: { complete: number; total: number; attempt?: number }): void {
+  console.log('');
+  console.log(chalk.cyan('────────────────────────────────────────────────────'));
+  console.log(chalk.white(`  Working on: ${chalk.bold(id)} — ${description}`));
+  console.log(chalk.gray(`  Progress:   ${progress.complete}/${progress.total} features complete${progress.attempt && progress.attempt > 1 ? ` (attempt ${progress.attempt})` : ''}`));
+  console.log(chalk.cyan('────────────────────────────────────────────────────'));
+  console.log('');
+}
+
 export function debugLog(msg: string, verbose: boolean): void {
   if (verbose) {
     console.log(chalk.gray(`[DEBUG] ${msg}`));

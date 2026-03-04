@@ -3,11 +3,12 @@ import { existsSync } from 'node:fs';
 import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
 import path from 'node:path';
-import type { RalphConfig, Runner } from '../config/types.js';
+import type { Feature, RalphConfig, Runner } from '../config/types.js';
 import { runPreflight } from '../core/preflight.js';
 import * as featureStore from '../core/feature-store.js';
 import { recalculateStats } from '../core/stats.js';
-import { FEATURE_LIST_FILE } from '../config/defaults.js';
+import { FEATURE_LIST_FILE, PROGRESS_FILE } from '../config/defaults.js';
+import * as progressLog from '../core/progress-log.js';
 import * as logger from '../ui/logger.js';
 
 const execAsync = promisify(exec);
@@ -55,6 +56,72 @@ function sleep(seconds: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, seconds * 1000));
 }
 
+/**
+ * Verifies that previously completed features still build and pass tests.
+ * If verification fails, reverts the features back to in_progress.
+ * Returns true if verification passed (or was skipped).
+ */
+async function verifyPreviousFeature(
+  cwd: string,
+  featureListPath: string,
+  progressPath: string,
+  completedIds: string[],
+): Promise<boolean> {
+  if (completedIds.length === 0) return true;
+
+  const data = await featureStore.read(featureListPath);
+  const { build_command, test_command } = data.config;
+
+  if (!build_command && !test_command) return true;
+
+  logger.info(`Verifying previously completed feature(s): ${completedIds.join(', ')}`);
+
+  const commands = [build_command, test_command].filter((c): c is string => !!c);
+
+  for (const cmd of commands) {
+    try {
+      await execAsync(cmd, { cwd, timeout: 120_000 });
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      logger.warning(`Verification failed: ${cmd}`);
+
+      for (const id of completedIds) {
+        const feature = featureStore.findById(data, id);
+        if (feature && feature.status === 'complete') {
+          feature.status = 'in_progress';
+          feature.attempts++;
+          feature.last_error = `Verification failed: ${cmd} — ${errorMsg}`;
+        }
+      }
+      recalculateStats(data);
+      await featureStore.write(featureListPath, data);
+      await progressLog.append(progressPath, `VERIFICATION FAILED for ${completedIds.join(', ')}: ${cmd} — ${errorMsg}`);
+      return false;
+    }
+  }
+
+  logger.success(`Verification passed for: ${completedIds.join(', ')}`);
+  await progressLog.append(progressPath, `VERIFIED: ${completedIds.join(', ')} — build and tests pass`);
+  return true;
+}
+
+/**
+ * Creates a final commit when all features are complete, if there are uncommitted changes.
+ */
+async function finalCommit(cwd: string, progressPath: string): Promise<void> {
+  try {
+    const { stdout: status } = await execAsync('git status --porcelain', { cwd });
+    if (status.trim()) {
+      await execAsync('git add .', { cwd });
+      await execAsync('git commit -m "feat: all features complete — final commit"', { cwd });
+      logger.success('Final commit created');
+      await progressLog.append(progressPath, 'ALL FEATURES COMPLETE — final commit');
+    }
+  } catch {
+    // Commit may fail if nothing staged or other git issues
+  }
+}
+
 export async function runImplement(
   config: RalphConfig,
   promptsDir: string,
@@ -76,6 +143,7 @@ export async function runImplement(
   }
 
   const featureListPath = path.join(cwd, FEATURE_LIST_FILE);
+  const progressPath = path.join(cwd, PROGRESS_FILE);
 
   // Pre-loop check
   try {
@@ -110,16 +178,78 @@ export async function runImplement(
       try { await unlink(nulPath); } catch { /* ignore */ }
     }
 
-    // Snapshot complete features before iteration so safety net knows what's new
-    let completeBefore = new Set<string>();
+    // --- FRAMEWORK PICKS THE NEXT FEATURE ---
+    // The framework controls which feature to work on, not the agent.
+    // This ensures one feature per fresh context/session.
+    let targetFeature: { id: string; description: string } | null = null;
     try {
-      const snap = await featureStore.read(featureListPath);
-      completeBefore = new Set(
-        snap.features.filter(f => f.status === 'complete').map(f => f.id),
-      );
-    } catch { /* ignore */ }
+      const data = await featureStore.read(featureListPath);
 
-    const prompt = `Your task instructions are in the file: ${implPromptPath} — start by using your Read tool to open that file, then execute every instruction. CRITICAL: When tests PASS you MUST run git add and git commit before exiting. Every completed feature gets its own commit. Do NOT commit broken code — if tests fail, just log the error and exit.`;
+      // First: resume any in_progress feature (retry from previous failed attempt)
+      const inProgress = data.features.find(f => f.status === 'in_progress');
+      if (inProgress) {
+        targetFeature = { id: inProgress.id, description: inProgress.description };
+      } else {
+        // Next: pick the first pending feature
+        const pending = data.features.find(f => f.status === 'pending');
+        if (pending) {
+          pending.status = 'in_progress';
+          recalculateStats(data);
+          await featureStore.write(featureListPath, data);
+          targetFeature = { id: pending.id, description: pending.description };
+        }
+      }
+    } catch {
+      logger.warning('Failed to read feature_list.json to pick next feature');
+    }
+
+    if (!targetFeature) {
+      // No actionable features — check final state
+      break;
+    }
+
+    // Show user-friendly feature banner with progress context
+    try {
+      const data = await featureStore.read(featureListPath);
+      const total = data.features.length;
+      const complete = data.features.filter(f => f.status === 'complete').length;
+      const feature = featureStore.findById(data, targetFeature.id);
+      logger.feature(targetFeature.id, targetFeature.description, {
+        complete,
+        total,
+        attempt: feature ? feature.attempts + 1 : 1,
+      });
+    } catch {
+      logger.info(`Target feature: ${targetFeature.id} — ${targetFeature.description}`);
+    }
+
+    // --- HIDE PENDING FEATURES ---
+    // Structural guard: remove other pending features from feature_list.json
+    // so the agent can ONLY see (and implement) the assigned feature.
+    // This prevents the agent from implementing multiple features in one session.
+    let hiddenFeatures: Feature[] = [];
+    try {
+      const data = await featureStore.read(featureListPath);
+      hiddenFeatures = data.features.filter(
+        f => f.status === 'pending' && f.id !== targetFeature.id,
+      ).map(f => ({ ...f }));
+      data.features = data.features.filter(
+        f => !(f.status === 'pending' && f.id !== targetFeature.id),
+      );
+      recalculateStats(data);
+      await featureStore.write(featureListPath, data);
+    } catch {
+      logger.warning('Failed to isolate feature for agent');
+    }
+
+    // Build a feature-specific prompt — framework controls feature selection,
+    // agent only implements the assigned feature and exits.
+    const prompt = [
+      `CRITICAL CONSTRAINT: You are assigned EXACTLY ONE feature. After completing it you MUST exit immediately. Do NOT look for or implement any other features.`,
+      `YOUR ASSIGNED FEATURE: ${targetFeature.id} — ${targetFeature.description}.`,
+      `WORKFLOW: 1) Read ${implPromptPath} for coding guidelines ONLY (IGNORE any instructions about finding, selecting, or cycling through features — your feature is already assigned). 2) Read claude-progress.txt for codebase patterns. 3) Implement ONLY ${targetFeature.id}. 4) Run tests. 5) If tests pass: git add . && git commit -m "feat: ${targetFeature.id} - ${targetFeature.description}", then EXIT. 6) If tests fail: log the error and EXIT.`,
+      `AFTER COMMITTING ${targetFeature.id} YOU MUST EXIT IMMEDIATELY. The framework manages feature sequencing — it will start a new session for the next feature. Implementing more than one feature per session will cause errors.`,
+    ].join(' ');
 
     await runner.invoke(prompt, {
       verbose: config.verbose,
@@ -128,10 +258,65 @@ export async function runImplement(
       stream: config.stream,
     });
 
-    // Safety net: auto-commit if the agent didn't
-    await ensureCommitted(cwd, featureListPath, completeBefore);
+    // --- RESTORE HIDDEN FEATURES ---
+    // Put the hidden pending features back into feature_list.json
+    // before checking results or doing any post-iteration work.
+    if (hiddenFeatures.length > 0) {
+      try {
+        const data = await featureStore.read(featureListPath);
+        data.features.push(...hiddenFeatures);
+        data.features.sort((a, b) => a.id.localeCompare(b.id));
+        recalculateStats(data);
+        await featureStore.write(featureListPath, data);
+      } catch {
+        logger.warning('Failed to restore hidden features');
+      }
+    }
 
-    // Safety net: recalculate stats
+    // Check if the targeted feature was completed
+    let featureCompleted = false;
+    try {
+      const data = await featureStore.read(featureListPath);
+      const feature = featureStore.findById(data, targetFeature.id);
+      featureCompleted = feature?.status === 'complete';
+    } catch { /* ignore */ }
+
+    // Safety net: auto-commit if the agent didn't
+    if (featureCompleted) {
+      const completeBefore = new Set<string>();
+      // We know which feature was targeted, so use that for commit detection
+      await ensureCommitted(cwd, featureListPath, completeBefore);
+    }
+
+    // --- VERIFICATION: build + test before proceeding ---
+    if (featureCompleted) {
+      const verified = await verifyPreviousFeature(cwd, featureListPath, progressPath, [targetFeature.id]);
+      if (!verified) {
+        logger.warning(`Verification failed for ${targetFeature.id} — next iteration will retry`);
+      } else {
+        // Commit any remaining changes (feature_list.json updates, progress.txt)
+        await ensureCommitted(cwd, featureListPath, new Set<string>());
+      }
+    } else {
+      // Feature was NOT completed by the agent — increment attempts
+      try {
+        const data = await featureStore.read(featureListPath);
+        const feature = featureStore.findById(data, targetFeature.id);
+        if (feature && feature.status === 'in_progress') {
+          feature.attempts++;
+          if (feature.attempts >= data.config.max_attempts_per_feature) {
+            feature.status = 'blocked';
+            feature.last_error = `Max attempts (${data.config.max_attempts_per_feature}) reached`;
+            logger.warning(`${targetFeature.id} blocked after ${feature.attempts} attempts`);
+          }
+          recalculateStats(data);
+          await featureStore.write(featureListPath, data);
+        }
+      } catch { /* ignore */ }
+      await progressLog.append(progressPath, `${targetFeature.id} — agent did not complete feature this iteration`);
+    }
+
+    // --- RECALCULATE & CHECK COMPLETION ---
     try {
       const data = await featureStore.read(featureListPath);
       recalculateStats(data);
@@ -151,6 +336,7 @@ export async function runImplement(
       if (remaining === 0 && blockedCount === 0) {
         logger.success(`ALL FEATURES COMPLETE! (${complete}/${total})`);
         logger.info(`Total iterations: ${iteration + 1}`);
+        await finalCommit(cwd, progressPath);
         return 0;
       }
 
