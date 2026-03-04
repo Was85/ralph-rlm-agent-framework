@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run build)",
+      "Bash(npm test)",
+      "Bash(npm publish --access public)",
+      "Bash(npx vitest run tests/unit/commands/)",
+      "Bash(npx vitest run)",
+      "Bash(npx vitest run tests/unit/shell-spawn.test.ts)"
+    ]
+  }
+}
