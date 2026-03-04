@@ -12,6 +12,8 @@ export interface Feature {
   claimed_by?: string | null;
   acceptance_criteria?: string[];
   source_requirement?: string;
+  depends_on?: string[];
+  related_files?: string[];
 }
 
 /** Configuration embedded in feature_list.json */
@@ -65,6 +67,7 @@ export interface RunnerConfig {
   dangerouslySkipPermissions: boolean;
   stream: boolean;
   maxTurns?: number;
+  cwd?: string;
 }
 
 /** Interface for AI CLI runners */

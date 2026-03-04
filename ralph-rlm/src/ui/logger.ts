@@ -42,6 +42,23 @@ export function feature(id: string, description: string, progress: { complete: n
   console.log('');
 }
 
+export function teamLevel(level: number, featureIds: string[]): void {
+  console.log('');
+  console.log(chalk.cyan('════════════════════════════════════════════════════'));
+  console.log(chalk.white(`  Level ${level}: ${featureIds.join(', ')}`));
+  console.log(chalk.gray(`  Dispatching ${featureIds.length} agent(s) in parallel`));
+  console.log(chalk.cyan('════════════════════════════════════════════════════'));
+  console.log('');
+}
+
+export function teamMerge(featureId: string, success: boolean): void {
+  if (success) {
+    console.log(chalk.green(`  [merge] ${featureId} — merged successfully`));
+  } else {
+    console.log(chalk.yellow(`  [merge] ${featureId} — merge failed`));
+  }
+}
+
 export function debugLog(msg: string, verbose: boolean): void {
   if (verbose) {
     console.log(chalk.gray(`[DEBUG] ${msg}`));

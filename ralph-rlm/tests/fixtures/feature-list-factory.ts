@@ -1,5 +1,15 @@
 import type { Feature, FeatureList, FeatureListConfig, FeatureListStats } from '../../src/config/types.js';
 
+export interface FeatureDependency {
+  featureId: string;
+  dependsOn: string[];
+}
+
+export interface FeatureFiles {
+  featureId: string;
+  relatedFiles: string[];
+}
+
 export interface FeatureListOptions {
   pending?: number;
   inProgress?: number;
@@ -8,6 +18,8 @@ export interface FeatureListOptions {
   claimedByPrefix?: string;
   project?: string;
   config?: Partial<FeatureListConfig>;
+  dependencies?: FeatureDependency[];
+  relatedFiles?: FeatureFiles[];
 }
 
 export function createFeature(overrides: Partial<Feature> & { id: string }): Feature {
@@ -29,6 +41,8 @@ export function createFeatureList(options: FeatureListOptions = {}): FeatureList
     claimedByPrefix = 'implementer',
     project = 'test-project',
     config: configOverrides,
+    dependencies = [],
+    relatedFiles: relatedFilesOpt = [],
   } = options;
 
   const features: Feature[] = [];
@@ -77,6 +91,18 @@ export function createFeatureList(options: FeatureListOptions = {}): FeatureList
       last_error: 'Build failed: CS1002 on attempt 5',
     }));
     counter++;
+  }
+
+  // Apply dependencies
+  for (const dep of dependencies) {
+    const feature = features.find(f => f.id === dep.featureId);
+    if (feature) feature.depends_on = dep.dependsOn;
+  }
+
+  // Apply related files
+  for (const rf of relatedFilesOpt) {
+    const feature = features.find(f => f.id === rf.featureId);
+    if (feature) feature.related_files = rf.relatedFiles;
   }
 
   const total = pending + inProgress + complete + blocked;

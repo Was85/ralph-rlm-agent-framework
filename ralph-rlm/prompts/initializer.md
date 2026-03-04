@@ -245,20 +245,26 @@ Scale features to the actual complexity of the PRD. Do NOT over-generate feature
 | `source_requirement` | Yes | Which PRD section this feature traces back to (e.g., `"## Authentication > Login"`). Enables the Validator to verify full coverage. |
 | `verification_steps` | Yes | Commands to verify the feature works (typically build + test commands from config). |
 
-### Include `related_files` for Large Codebases
+### Include `related_files` (Important for Team Mode)
 
-When you find relevant existing code, reference it:
+Always populate `related_files` with the files each feature will create or modify. This is critical:
+- **Team mode** uses `related_files` to detect file overlap and prevent parallel agents from editing the same files
+- **Single mode** uses it to help the Implementer find the right place to add code
 
 ```json
 {
   "id": "F015",
   "description": "Add rate limiting middleware",
   "notes": "Follow pattern in existing AuthMiddleware.cs",
-  "related_files": ["src/Middleware/AuthMiddleware.cs"]
+  "related_files": ["src/Middleware/RateLimitMiddleware.cs", "src/Middleware/AuthMiddleware.cs"]
 }
 ```
 
-This helps the Implementer Agent find the right place to add code.
+**Tips for `related_files`:**
+- Include files that will be **created** (new source files, new test files)
+- Include files that will be **modified** (existing files the feature needs to change)
+- Include shared files like `Program.cs`, `Startup.cs` if the feature requires registration there
+- Features sharing `related_files` entries cannot run in parallel — the framework handles this automatically
 
 ### Feature Sizing Rules
 

@@ -21,7 +21,7 @@ export class ClaudeRunner implements Runner {
 
   async invoke(prompt: string, config: RunnerConfig): Promise<number> {
     const args = this.buildArgs(prompt, config);
-    return spawnWithShell('claude', args);
+    return spawnWithShell('claude', args, config.cwd);
   }
 
   async checkInstalled(): Promise<boolean> {

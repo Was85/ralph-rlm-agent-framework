@@ -144,7 +144,7 @@ Docs: https://www.npmjs.com/package/@alcinanet/ralph-rlm`)
     const runner = createRunner(config.runner);
 
     if (config.team) {
-      const orchestrator = new TeamOrchestrator(runner, config, process.cwd());
+      const orchestrator = new TeamOrchestrator(runner, config, resolvePromptsDir(), process.cwd());
       process.exitCode = await orchestrator.run();
     } else {
       process.exitCode = await runImplement(config, resolvePromptsDir(), runner);

@@ -14,7 +14,7 @@ export class CopilotRunner implements Runner {
 
   async invoke(prompt: string, config: RunnerConfig): Promise<number> {
     const args = this.buildArgs(prompt, config);
-    return spawnWithShell('copilot', args);
+    return spawnWithShell('copilot', args, config.cwd);
   }
 
   async checkInstalled(): Promise<boolean> {

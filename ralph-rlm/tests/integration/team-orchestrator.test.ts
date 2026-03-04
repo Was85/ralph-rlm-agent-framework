@@ -2,20 +2,21 @@ import { writeFile, mkdir, rm, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { TeamOrchestrator } from '../../src/team/team-orchestrator.js';
-import type { RalphConfig, Runner, RunnerConfig, RunnerType } from '../../src/config/types.js';
+import type { RalphConfig, Runner, RunnerConfig, RunnerType, FeatureList } from '../../src/config/types.js';
+import type { WorktreeManager, Worktree, MergeResult } from '../../src/team/worktree-manager.js';
 import { createFeatureList } from '../fixtures/feature-list-factory.js';
 import { DEFAULT_CONFIG } from '../../src/config/defaults.js';
 
-/** Fake runner that just records invocations and returns a configurable exit code */
+/** Fake runner that records invocations */
 class FakeRunner implements Runner {
   readonly type: RunnerType = 'claude';
   invocations: Array<{ prompt: string; config: RunnerConfig }> = [];
   exitCode = 0;
-  onInvoke?: (prompt: string) => Promise<void>;
+  onInvoke?: (prompt: string, config: RunnerConfig) => Promise<void>;
 
   async invoke(prompt: string, config: RunnerConfig): Promise<number> {
     this.invocations.push({ prompt, config });
-    if (this.onInvoke) await this.onInvoke(prompt);
+    if (this.onInvoke) await this.onInvoke(prompt, config);
     return this.exitCode;
   }
 
@@ -24,20 +25,47 @@ class FakeRunner implements Runner {
   }
 }
 
-function makeConfig(overrides: Partial<RalphConfig> = {}): RalphConfig {
-  return { ...DEFAULT_CONFIG, maxIterations: 3, ...overrides };
+/** Fake worktree manager that creates local directories */
+class FakeWorktreeManager implements WorktreeManager {
+  async create(featureId: string, cwd: string): Promise<Worktree> {
+    const wtPath = path.join(cwd, '.claude', 'worktrees', `ralph-${featureId}`);
+    await mkdir(wtPath, { recursive: true });
+    return {
+      name: `ralph-${featureId}`,
+      path: wtPath,
+      branch: `ralph/${featureId}`,
+      featureId,
+    };
+  }
+
+  async merge(_worktree: Worktree, _cwd: string): Promise<MergeResult> {
+    return { success: true, conflicted: false };
+  }
+
+  async cleanup(_worktree: Worktree, _cwd: string): Promise<void> {}
+  async cleanupAll(_cwd: string): Promise<void> {}
+  async revertLastMerge(_cwd: string): Promise<void> {}
 }
 
-describe('TeamOrchestrator', () => {
+function makeConfig(overrides: Partial<RalphConfig> = {}): RalphConfig {
+  return { ...DEFAULT_CONFIG, maxIterations: 3, sleepBetween: 0, ...overrides };
+}
+
+describe('TeamOrchestrator (integration)', () => {
   let tmpDir: string;
+  let promptsDir: string;
   let runner: FakeRunner;
+  let wtManager: FakeWorktreeManager;
 
   beforeEach(async () => {
-    tmpDir = path.join(os.tmpdir(), `ralph-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    tmpDir = path.join(os.tmpdir(), `ralph-team-int-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     await mkdir(tmpDir, { recursive: true });
-    // Create .git dir so preflight can pass (if checked)
     await mkdir(path.join(tmpDir, '.git'), { recursive: true });
+    promptsDir = path.join(tmpDir, 'prompts');
+    await mkdir(promptsDir, { recursive: true });
+    await writeFile(path.join(promptsDir, 'implementer.md'), 'Implement the feature', 'utf-8');
     runner = new FakeRunner();
+    wtManager = new FakeWorktreeManager();
   });
 
   afterEach(async () => {
@@ -48,7 +76,7 @@ describe('TeamOrchestrator', () => {
     const data = createFeatureList({ complete: 3, pending: 0 });
     await writeFile(path.join(tmpDir, 'feature_list.json'), JSON.stringify(data, null, 2));
 
-    const orch = new TeamOrchestrator(runner, makeConfig(), tmpDir);
+    const orch = new TeamOrchestrator(runner, makeConfig(), promptsDir, tmpDir, wtManager);
     const result = await orch.run();
 
     expect(result).toBe(0);
@@ -59,7 +87,7 @@ describe('TeamOrchestrator', () => {
     const data = createFeatureList({ complete: 2, blocked: 1, pending: 0 });
     await writeFile(path.join(tmpDir, 'feature_list.json'), JSON.stringify(data, null, 2));
 
-    const orch = new TeamOrchestrator(runner, makeConfig(), tmpDir);
+    const orch = new TeamOrchestrator(runner, makeConfig(), promptsDir, tmpDir, wtManager);
     const result = await orch.run();
 
     expect(result).toBe(2);
@@ -70,82 +98,53 @@ describe('TeamOrchestrator', () => {
     const data = createFeatureList({ pending: 2 });
     await writeFile(path.join(tmpDir, 'feature_list.json'), JSON.stringify(data, null, 2));
 
-    // After first invoke, mark all features complete so the loop exits
-    runner.onInvoke = async () => {
-      const completeData = createFeatureList({ complete: 2, pending: 0 });
-      await writeFile(path.join(tmpDir, 'feature_list.json'), JSON.stringify(completeData, null, 2));
+    runner.onInvoke = async (_prompt, config) => {
+      if (config.cwd) {
+        const raw = await readFile(path.join(config.cwd, 'feature_list.json'), 'utf-8');
+        const fl = JSON.parse(raw) as FeatureList;
+        const target = fl.features.find(f => f.status === 'in_progress');
+        if (target) {
+          target.status = 'complete';
+          await writeFile(path.join(config.cwd, 'feature_list.json'), JSON.stringify(fl, null, 2), 'utf-8');
+        }
+      }
     };
 
-    const orch = new TeamOrchestrator(runner, makeConfig(), tmpDir);
+    const orch = new TeamOrchestrator(runner, makeConfig(), promptsDir, tmpDir, wtManager);
     const result = await orch.run();
 
     expect(result).toBe(0);
-    expect(runner.invocations).toHaveLength(1);
-    expect(runner.invocations[0]!.config.maxTurns).toBeGreaterThan(0);
-  });
-
-  it('repairs stats after each iteration', async () => {
-    const data = createFeatureList({ pending: 1 });
-    // Corrupt the stats
-    data.stats.pending = 999;
-    await writeFile(path.join(tmpDir, 'feature_list.json'), JSON.stringify(data, null, 2));
-
-    runner.onInvoke = async () => {
-      const completeData = createFeatureList({ complete: 1, pending: 0 });
-      // Also corrupt stats
-      completeData.stats.complete = 0;
-      await writeFile(path.join(tmpDir, 'feature_list.json'), JSON.stringify(completeData, null, 2));
-    };
-
-    const orch = new TeamOrchestrator(runner, makeConfig(), tmpDir);
-    await orch.run();
-
-    // Stats should be repaired
-    const raw = await readFile(path.join(tmpDir, 'feature_list.json'), 'utf-8');
-    const result = JSON.parse(raw);
-    expect(result.stats.complete).toBe(1);
-    expect(result.stats.pending).toBe(0);
+    expect(runner.invocations.length).toBeGreaterThanOrEqual(1);
   });
 
   it('stops after maxIterations', async () => {
     const data = createFeatureList({ pending: 5 });
     await writeFile(path.join(tmpDir, 'feature_list.json'), JSON.stringify(data, null, 2));
 
-    // Runner never completes features
-    const orch = new TeamOrchestrator(runner, makeConfig({ maxIterations: 2 }), tmpDir);
+    const orch = new TeamOrchestrator(runner, makeConfig({ maxIterations: 2 }), promptsDir, tmpDir, wtManager);
     const result = await orch.run();
 
     expect(result).toBe(1);
-    expect(runner.invocations).toHaveLength(2);
-  });
-
-  it('calculates maxTurns from remaining features', async () => {
-    const data = createFeatureList({ pending: 4 });
-    await writeFile(path.join(tmpDir, 'feature_list.json'), JSON.stringify(data, null, 2));
-
-    runner.onInvoke = async () => {
-      const completeData = createFeatureList({ complete: 4, pending: 0 });
-      await writeFile(path.join(tmpDir, 'feature_list.json'), JSON.stringify(completeData, null, 2));
-    };
-
-    const orch = new TeamOrchestrator(runner, makeConfig(), tmpDir);
-    await orch.run();
-
-    // maxTurns = 50 base + 5 per feature = 50 + 20 = 70
-    expect(runner.invocations[0]!.config.maxTurns).toBe(70);
   });
 
   it('passes runner config flags through', async () => {
     const data = createFeatureList({ pending: 1 });
     await writeFile(path.join(tmpDir, 'feature_list.json'), JSON.stringify(data, null, 2));
 
-    runner.onInvoke = async () => {
-      const completeData = createFeatureList({ complete: 1, pending: 0 });
-      await writeFile(path.join(tmpDir, 'feature_list.json'), JSON.stringify(completeData, null, 2));
+    runner.onInvoke = async (_prompt, config) => {
+      if (config.cwd) {
+        const raw = await readFile(path.join(config.cwd, 'feature_list.json'), 'utf-8');
+        const fl = JSON.parse(raw) as FeatureList;
+        const target = fl.features.find(f => f.status === 'in_progress');
+        if (target) {
+          target.status = 'complete';
+          await writeFile(path.join(config.cwd, 'feature_list.json'), JSON.stringify(fl, null, 2), 'utf-8');
+        }
+      }
     };
 
     const config = makeConfig({ verbose: true, dangerouslySkipPermissions: true, stream: true });
-    const orch = new TeamOrchestrator(runner, config, tmpDir);
+    const orch = new TeamOrchestrator(runner, config, promptsDir, tmpDir, wtManager);
     await orch.run();
 
     const invocation = runner.invocations[0]!;

@@ -8,7 +8,7 @@ import { spawn } from 'node:child_process';
  * (e.g. a prompt string). We fix this by building the full command string
  * ourselves and passing it as a single token.
  */
-export function spawnWithShell(command: string, args: string[]): Promise<number> {
+export function spawnWithShell(command: string, args: string[], cwd?: string): Promise<number> {
   return new Promise((resolve) => {
     let proc;
 
@@ -16,9 +16,9 @@ export function spawnWithShell(command: string, args: string[]): Promise<number>
       // Quote each arg that contains spaces or special characters
       const quoted = args.map((a) => (needsQuoting(a) ? `"${a}"` : a));
       const cmdLine = `${command} ${quoted.join(' ')}`;
-      proc = spawn(cmdLine, [], { stdio: 'inherit', shell: true });
+      proc = spawn(cmdLine, [], { stdio: 'inherit', shell: true, cwd });
     } else {
-      proc = spawn(command, args, { stdio: 'inherit', shell: true });
+      proc = spawn(command, args, { stdio: 'inherit', shell: true, cwd });
     }
 
     proc.on('close', (code) => resolve(code ?? 1));
