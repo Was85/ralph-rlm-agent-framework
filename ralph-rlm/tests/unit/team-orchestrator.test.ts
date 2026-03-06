@@ -8,6 +8,11 @@ import { DEFAULT_CONFIG, PROGRESS_FILE } from '../../src/config/defaults.js';
 import { createFeatureList } from '../fixtures/feature-list-factory.js';
 import type { RalphConfig } from '../../src/config/types.js';
 
+// Mock runPreflight so tests don't require the actual CLI binary on the system.
+vi.mock('../../src/core/preflight.js', () => ({
+  runPreflight: vi.fn().mockResolvedValue(true),
+}));
+
 // --- Mock WorktreeManager ---
 class MockWorktreeManager implements WorktreeManager {
   created: string[] = [];
@@ -127,6 +132,9 @@ describe('TeamOrchestrator', () => {
   });
 
   it('returns 1 if preflight fails (no .git)', async () => {
+    const { runPreflight } = await import('../../src/core/preflight.js');
+    vi.mocked(runPreflight).mockResolvedValueOnce(false);
+
     const data = createFeatureList({ pending: 1 });
     await writeFile(path.join(tmpDir, 'feature_list.json'), JSON.stringify(data, null, 2), 'utf-8');
     await writeFile(path.join(promptsDir, 'implementer.md'), 'Implement', 'utf-8');

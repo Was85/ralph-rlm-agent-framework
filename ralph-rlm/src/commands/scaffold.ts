@@ -77,14 +77,28 @@ export async function runScaffold(
       logger.warning('.claude/settings.json already exists, skipping');
     }
   } else {
-    // Copilot: copy .github/instructions/
-    const copilotSrc = path.join(assetsDir, 'copilot');
-    const copilotDest = path.join(cwd, '.github', 'instructions');
-    if (existsSync(copilotSrc) && !existsSync(copilotDest)) {
-      await mkdir(copilotDest, { recursive: true });
-      await cp(copilotSrc, copilotDest, { recursive: true });
+    // Copilot: copy .github/instructions/ (coding standards)
+    const instructionsSrc = path.join(assetsDir, 'copilot', 'instructions');
+    const instructionsDest = path.join(cwd, '.github', 'instructions');
+    if (existsSync(instructionsSrc) && !existsSync(instructionsDest)) {
+      await mkdir(instructionsDest, { recursive: true });
+      await cp(instructionsSrc, instructionsDest, { recursive: true });
       logger.success('Copied .github/instructions/ (coding standards)');
       copied++;
+    } else if (existsSync(instructionsDest)) {
+      logger.warning('.github/instructions/ already exists, skipping');
+    }
+
+    // Copilot: copy .github/skills/ralph/ (skill definitions)
+    const skillsSrc = path.join(assetsDir, 'copilot', 'skills', 'ralph');
+    const skillsDest = path.join(cwd, '.github', 'skills', 'ralph');
+    if (existsSync(skillsSrc) && !existsSync(skillsDest)) {
+      await mkdir(skillsDest, { recursive: true });
+      await cp(skillsSrc, skillsDest, { recursive: true });
+      logger.success('Copied .github/skills/ralph/ (skill definitions)');
+      copied++;
+    } else if (existsSync(skillsDest)) {
+      logger.warning('.github/skills/ralph/ already exists, skipping');
     }
   }
 

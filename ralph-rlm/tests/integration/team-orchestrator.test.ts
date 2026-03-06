@@ -7,6 +7,11 @@ import type { WorktreeManager, Worktree, MergeResult } from '../../src/team/work
 import { createFeatureList } from '../fixtures/feature-list-factory.js';
 import { DEFAULT_CONFIG } from '../../src/config/defaults.js';
 
+// Mock runPreflight so tests don't require the actual CLI binary on the system.
+vi.mock('../../src/core/preflight.js', () => ({
+  runPreflight: vi.fn().mockResolvedValue(true),
+}));
+
 /** Fake runner that records invocations */
 class FakeRunner implements Runner {
   readonly type: RunnerType = 'claude';

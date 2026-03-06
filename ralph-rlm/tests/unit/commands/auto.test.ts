@@ -5,6 +5,11 @@ import { runAuto } from '../../../src/commands/auto.js';
 import type { RalphConfig, Runner, RunnerConfig, FeatureList, ValidationState } from '../../../src/config/types.js';
 import { DEFAULT_CONFIG } from '../../../src/config/defaults.js';
 
+// Mock runPreflight so tests don't require the actual CLI binary on the system.
+vi.mock('../../../src/core/preflight.js', () => ({
+  runPreflight: vi.fn().mockResolvedValue(true),
+}));
+
 function makeConfig(overrides: Partial<RalphConfig> = {}): RalphConfig {
   return { ...DEFAULT_CONFIG, sleepBetween: 0, ...overrides };
 }

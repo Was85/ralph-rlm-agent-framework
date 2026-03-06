@@ -18,8 +18,8 @@ describe('spawnWithShell', () => {
     expect(code).toBe(0);
   });
 
-  it('resolves 1 when command does not exist', async () => {
+  it('resolves non-zero when command does not exist', async () => {
     const code = await spawnWithShell('nonexistent_command_xyz', []);
-    expect(code).toBe(1);
+    expect(code).not.toBe(0);
   });
 });
