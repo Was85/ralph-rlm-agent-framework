@@ -247,7 +247,8 @@ export async function runImplement(
     const prompt = [
       `CRITICAL CONSTRAINT: You are assigned EXACTLY ONE feature. After completing it you MUST exit immediately. Do NOT look for or implement any other features.`,
       `YOUR ASSIGNED FEATURE: ${targetFeature.id} — ${targetFeature.description}.`,
-      `WORKFLOW: 1) Read ${implPromptPath} for coding guidelines ONLY (IGNORE any instructions about finding, selecting, or cycling through features — your feature is already assigned). 2) Read claude-progress.txt for codebase patterns. 3) Implement ONLY ${targetFeature.id}. 4) Run tests. 5) If tests pass: git add . && git commit -m 'feat: ${targetFeature.id} - ${targetFeature.description}', then EXIT. 6) If tests fail: log the error and EXIT.`,
+      `WORKFLOW: 1) Read ${implPromptPath} for coding guidelines (if not accessible, follow steps below). 2) Read claude-progress.txt for codebase patterns. 3) Implement ONLY ${targetFeature.id}. 4) Run quality gates (build + test commands from feature_list.json config). 5) If tests pass: update feature status with: npx ralph skill update-feature-status --id ${targetFeature.id} --status complete, then git add . && git commit -m 'feat: ${targetFeature.id} - ${targetFeature.description}', then EXIT. 6) If tests fail: log the error and EXIT.`,
+      `MANDATORY: After tests pass you MUST run the skill command above to mark ${targetFeature.id} as complete in feature_list.json BEFORE committing. Never edit feature_list.json directly.`,
       `AFTER COMMITTING ${targetFeature.id} YOU MUST EXIT IMMEDIATELY. The framework manages feature sequencing — it will start a new session for the next feature. Implementing more than one feature per session will cause errors.`,
     ].join(' ');
 

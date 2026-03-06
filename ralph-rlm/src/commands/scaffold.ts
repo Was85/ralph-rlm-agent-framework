@@ -10,6 +10,11 @@ function getScaffoldAssetsDir(): string {
   return path.resolve(thisDir, '..', '..', 'scaffold-assets');
 }
 
+function getPromptsDir(): string {
+  const thisDir = path.dirname(fileURLToPath(import.meta.url));
+  return path.resolve(thisDir, '..', '..', 'prompts');
+}
+
 export async function runScaffold(
   runner: 'claude' | 'copilot',
   cwd: string = process.cwd(),
@@ -38,6 +43,19 @@ export async function runScaffold(
     } else {
       logger.warning('templates/ already exists, skipping');
     }
+  }
+
+  // Copy prompt files into .ralph/prompts/ so agents can read them locally
+  // (Copilot's sandbox blocks reading files outside the project directory)
+  const promptsSrc = getPromptsDir();
+  const promptsDest = path.join(cwd, '.ralph', 'prompts');
+  if (existsSync(promptsSrc) && !existsSync(promptsDest)) {
+    await mkdir(promptsDest, { recursive: true });
+    await cp(promptsSrc, promptsDest, { recursive: true });
+    logger.success('Copied .ralph/prompts/ (agent instructions)');
+    copied++;
+  } else if (existsSync(promptsDest)) {
+    logger.warning('.ralph/prompts/ already exists, skipping');
   }
 
   if (runner === 'claude') {

@@ -3,6 +3,7 @@
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 import path from 'node:path';
+import { existsSync } from 'node:fs';
 import { FEATURE_LIST_FILE } from './config/defaults.js';
 import type { FeatureStatus } from './config/types.js';
 import { buildConfig } from './config/build-config.js';
@@ -23,6 +24,10 @@ import { TeamOrchestrator } from './team/team-orchestrator.js';
 import { fileURLToPath } from 'node:url';
 
 function resolvePromptsDir(): string {
+  // Prefer local .ralph/prompts/ in the project (accessible to all runners)
+  const localPrompts = path.join(process.cwd(), '.ralph', 'prompts');
+  if (existsSync(localPrompts)) return localPrompts;
+  // Fall back to framework's prompts directory
   return path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'prompts');
 }
 

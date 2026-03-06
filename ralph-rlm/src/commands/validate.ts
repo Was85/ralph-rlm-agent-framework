@@ -38,7 +38,7 @@ export async function runValidate(
   for (let iteration = 0; iteration < config.maxValidateIterations; iteration++) {
     logger.info(`--- Validation Iteration ${iteration + 1} of ${config.maxValidateIterations} ---`);
 
-    const prompt = `Your task instructions are in the file: ${valPromptPath} — also read these files from the current working directory: prd.md, feature_list.json, and validation-state.json. Start by using your Read tool to open all four files, then execute every instruction.`;
+    const prompt = `Your task instructions are in the file: ${valPromptPath} — also read these files from the current working directory: prd.md, feature_list.json, and validation-state.json. Start by using your Read tool to open all four files, then execute every instruction. CRITICAL CONSTRAINT: You are a VALIDATOR only. You MUST NOT write any application code, create source files, install packages, run build commands, or implement features. Your ONLY job is to verify PRD coverage by mapping requirements to features, identify gaps, add missing features to feature_list.json, and update validation-state.json. If you write any code beyond updating these two JSON files, you are violating your role.`;
 
     await runner.invoke(prompt, {
       verbose: config.verbose,
