@@ -9,6 +9,12 @@ import type { RalphConfig, Runner, RunnerConfig, FeatureList, ValidationState } 
 import { DEFAULT_CONFIG } from '../../src/config/defaults.js';
 import { createFeatureList } from '../fixtures/feature-list-factory.js';
 
+// Mock checkCli so tests don't require the actual CLI binary on the system
+vi.mock('../../src/core/preflight.js', async () => {
+  const actual = await vi.importActual<typeof import('../../src/core/preflight.js')>('../../src/core/preflight.js');
+  return { ...actual, checkCli: vi.fn().mockResolvedValue(true) };
+});
+
 function makeConfig(overrides: Partial<RalphConfig> = {}): RalphConfig {
   return { ...DEFAULT_CONFIG, sleepBetween: 0, ...overrides };
 }
