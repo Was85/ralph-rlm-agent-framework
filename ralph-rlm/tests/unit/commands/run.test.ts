@@ -6,11 +6,12 @@ import type { RalphConfig, Runner, RunnerConfig, FeatureList } from '../../../sr
 import { DEFAULT_CONFIG, PROGRESS_FILE } from '../../../src/config/defaults.js';
 import { createFeatureList } from '../../fixtures/feature-list-factory.js';
 
-// Mock checkCli so tests don't require the actual CLI binary on the system
-vi.mock('../../../src/core/preflight.js', async () => {
-  const actual = await vi.importActual<typeof import('../../../src/core/preflight.js')>('../../../src/core/preflight.js');
-  return { ...actual, checkCli: vi.fn().mockResolvedValue(true) };
-});
+// Mock runPreflight so tests don't require the actual CLI binary on the system.
+// ESM internal calls aren't affected by export mocks, so we mock runPreflight directly.
+import { runPreflight } from '../../../src/core/preflight.js';
+vi.mock('../../../src/core/preflight.js', () => ({
+  runPreflight: vi.fn().mockResolvedValue(true),
+}));
 
 function makeConfig(overrides: Partial<RalphConfig> = {}): RalphConfig {
   return { ...DEFAULT_CONFIG, sleepBetween: 0, ...overrides };
@@ -130,7 +131,7 @@ describe('run command', () => {
   });
 
   it('returns 1 if preflight fails', async () => {
-    // No .git directory
+    vi.mocked(runPreflight).mockResolvedValueOnce(false);
     const data = createFeatureList({ pending: 1 });
     await writeFile(path.join(tmpDir, 'feature_list.json'), JSON.stringify(data, null, 2), 'utf-8');
     await writeFile(path.join(promptsDir, 'implementer.md'), 'Implement', 'utf-8');

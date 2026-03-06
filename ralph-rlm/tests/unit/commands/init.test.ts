@@ -6,11 +6,11 @@ import { runInit } from '../../../src/commands/init.js';
 import type { RalphConfig, Runner, RunnerConfig } from '../../../src/config/types.js';
 import { DEFAULT_CONFIG } from '../../../src/config/defaults.js';
 
-// Mock checkCli so tests don't require the actual CLI binary on the system
-vi.mock('../../../src/core/preflight.js', async () => {
-  const actual = await vi.importActual<typeof import('../../../src/core/preflight.js')>('../../../src/core/preflight.js');
-  return { ...actual, checkCli: vi.fn().mockResolvedValue(true) };
-});
+// Mock runPreflight so tests don't require the actual CLI binary on the system.
+import { runPreflight } from '../../../src/core/preflight.js';
+vi.mock('../../../src/core/preflight.js', () => ({
+  runPreflight: vi.fn().mockResolvedValue(true),
+}));
 
 function createMockRunner(behavior?: (prompt: string) => Promise<void>): Runner {
   return {
@@ -81,8 +81,7 @@ describe('init command', () => {
   });
 
   it('returns 1 if preflight fails', async () => {
-    // Remove .git to fail preflight
-    await rm(path.join(tmpDir, '.git'), { recursive: true });
+    vi.mocked(runPreflight).mockResolvedValueOnce(false);
     const runner = createMockRunner();
 
     const result = await runInit(makeConfig(), promptsDir, runner, tmpDir);
