@@ -165,7 +165,8 @@ Sets up project files for Ralph in the current directory. Run this once per proj
    - Creates `.claude/rules/` with coding standard rules that Claude Code auto-loads when editing matching file types
    - Creates `.claude/settings.json` with recommended Claude Code settings
 4. If `--runner copilot`:
-   - Creates `.github/instructions/` with equivalent instruction files for GitHub Copilot
+   - Creates `.github/instructions/` with instruction files for GitHub Copilot (Ralph workflow, C# coding standards, plus a template for your own)
+   - Creates `.github/skills/ralph/` with SKILL.md files — same Ralph skills as the Claude version, in Copilot's agent skills format
 5. Creates `prd.md` from the template (a structured starter document with sections for Project Overview, Functional Requirements, Non-Functional Requirements, etc.)
 6. **Skips any file/directory that already exists** — safe to re-run without overwriting your changes
 
@@ -179,8 +180,6 @@ ralph scaffold --runner copilot   # Scaffold for GitHub Copilot instead
 | `--runner` | `claude` | Which AI tool to scaffold for: `claude` or `copilot` |
 
 **Returns:** `0` on success, `1` if scaffold-assets not found or file I/O errors.
-
-> **Note for Copilot users:** The Copilot scaffolding is currently minimal. You may need to manually add instruction files to `.github/instructions/`.
 
 ---
 
@@ -599,13 +598,15 @@ ralph auto --stream                           # Stream JSON output from Claude
 
 ### Files `ralph scaffold` Creates
 
-| Path | Description |
-|------|-------------|
-| `.claude/skills/ralph/` | SKILL.md files (7 skills) — AI agents discover these at runtime and use them to interact with feature_list.json |
-| `.claude/rules/` | Coding standards auto-loaded by Claude Code when working with matching file types (includes templates for C#, Playwright, etc.) |
-| `.claude/settings.json` | Claude Code workspace settings — configures integration with SKILL.md files and rules |
-| `templates/` | Templates for feature_list.json, prd.md, validation-state.json |
-| `prd.md` | Starter template for your requirements |
+| Path | Runner | Description |
+|------|--------|-------------|
+| `.claude/skills/ralph/` | Claude | SKILL.md files (7 skills) — AI agents discover these at runtime and use them to interact with feature_list.json |
+| `.claude/rules/` | Claude | Coding standards auto-loaded by Claude Code when working with matching file types (includes templates for C#, Playwright, etc.) |
+| `.claude/settings.json` | Claude | Claude Code workspace settings — configures integration with SKILL.md files and rules |
+| `.github/skills/ralph/` | Copilot | SKILL.md files (same 7 skills) — Copilot agent skills format |
+| `.github/instructions/` | Copilot | Instruction files for coding standards and Ralph workflow guidance |
+| `templates/` | Both | Templates for feature_list.json, prd.md, validation-state.json |
+| `prd.md` | Both | Starter template for your requirements |
 
 ### Feature Statuses
 
@@ -752,7 +753,7 @@ These are loaded at runtime and passed to the AI CLI as the initial instruction:
 
 ### SKILL.md Files (created by `ralph scaffold`)
 
-These are placed in your project's `.claude/skills/ralph/` directory. Claude Code discovers them at runtime and uses them to understand what CLI commands are available:
+These are placed in your project's `.claude/skills/ralph/` (Claude) or `.github/skills/ralph/` (Copilot) directory. Both agents discover them at runtime and use them to understand what CLI commands are available:
 
 | Skill | What It Describes |
 |-------|-------------------|
