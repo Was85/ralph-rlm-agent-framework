@@ -9,6 +9,31 @@ import * as logger from '../ui/logger.js';
 
 const execAsync = promisify(exec);
 
+/**
+ * Undo any source files the init agent created beyond the allowed outputs.
+ * Preserves feature_list.json, claude-progress.txt, and framework dirs (.ralph/, .claude/, .github/).
+ */
+async function undoInitCodeChanges(cwd: string, featureListPath: string, progressPath: string): Promise<void> {
+  try {
+    // Save the files we want to keep
+    const featureListContent = await readFile(featureListPath, 'utf-8');
+    const progressContent = existsSync(progressPath) ? await readFile(progressPath, 'utf-8') : null;
+
+    // Reset all tracked changes and remove untracked files (except framework dirs)
+    await execAsync('git checkout -- .', { cwd }).catch(() => {});
+    // Remove untracked files but keep framework directories
+    await execAsync('git clean -fd -e .ralph/ -e .claude/ -e .github/ -e templates/ -e prd.md -e feature_list.json -e claude-progress.txt -e validation-state.json', { cwd }).catch(() => {});
+
+    // Restore our outputs
+    await writeFile(featureListPath, featureListContent, 'utf-8');
+    if (progressContent !== null) {
+      await writeFile(progressPath, progressContent, 'utf-8');
+    }
+  } catch {
+    // Best effort — don't fail init if cleanup fails
+  }
+}
+
 export async function runInit(
   config: RalphConfig,
   promptsDir: string,
@@ -43,6 +68,8 @@ export async function runInit(
   });
 
   const featureListPath = path.join(cwd, 'feature_list.json');
+  const progressPath = path.join(cwd, 'claude-progress.txt');
+
   if (existsSync(featureListPath)) {
     try {
       const raw = await readFile(featureListPath, 'utf-8');
@@ -60,6 +87,10 @@ export async function runInit(
         }
         await writeFile(featureListPath, JSON.stringify(data, null, 2), 'utf-8');
       }
+
+      // Safety net: undo any source code the init agent may have created.
+      // Only feature_list.json and claude-progress.txt should survive init.
+      await undoInitCodeChanges(cwd, featureListPath, progressPath);
 
       logger.success('Initialization complete!');
       logger.info(`Created ${featureCount} features in feature_list.json`);
