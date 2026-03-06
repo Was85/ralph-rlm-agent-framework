@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run build)",
+      "Bash(npm test)",
+      "Bash(npm publish --access public)",
+      "Bash(npx vitest run tests/unit/commands/)",
+      "Bash(npx vitest run)",
+      "Bash(npx vitest run tests/unit/shell-spawn.test.ts)",
+      "Bash(file .claude/*)",
+      "Bash(gh run view 22770147392 --log-failed)",
+      "Bash(gh run view 22770704256 --job 66050615614 --log-failed)",
+      "Bash(gh run view 22770704256 --log-failed)",
+      "Bash(echo \"EXIT: $?\")",
+      "WebSearch",
+      "WebFetch(domain:docs.github.com)",
+      "WebFetch(domain:code.visualstudio.com)",
+      "Bash(for skill in get-next-feature update-feature-status increment-feature-attempts get-feature-stats claim-feature prd-author validate-prd)",
+      "Bash(do cp \"claude/skills/ralph/$skill/SKILL.md\" \"copilot/skills/ralph/$skill/SKILL.md\")",
+      "Bash(done)",
+      "Bash(mkdir -p instructions)",
+      "Bash(mv ralph-workflow.instructions.md csharp.instructions.md TEMPLATE.instructions.md instructions/)"
+    ]
+  }
+}
