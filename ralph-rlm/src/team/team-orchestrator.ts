@@ -49,6 +49,11 @@ export class TeamOrchestrator {
     // Clean up orphaned worktrees from previous crashed runs
     await this.worktreeManager.cleanupAll(this.cwd);
 
+    // Ensure framework files (.ralph/, .claude/) are tracked in the main repo.
+    // Worktree branches commit these files; if they're untracked in main,
+    // git merge refuses with "untracked working tree files would be overwritten".
+    await this.ensureFrameworkFilesTracked();
+
     // Register graceful shutdown handler
     const shutdownHandler = async () => {
       logger.warning('Shutting down — cleaning up worktrees...');
@@ -444,6 +449,39 @@ export class TeamOrchestrator {
         await progressLog.append(this.progressPath, 'ALL FEATURES COMPLETE — final commit');
       }
     } catch { /* ignore */ }
+  }
+
+  /**
+   * Commits untracked framework directories so worktree merges don't fail.
+   * Without this, files like .ralph/prompts/*.md are untracked in main but
+   * committed in worktree branches, causing "untracked working tree files
+   * would be overwritten by merge" errors on every merge attempt.
+   */
+  private async ensureFrameworkFilesTracked(): Promise<void> {
+    const dirs = ['.ralph/', '.claude/'];
+    const toAdd: string[] = [];
+
+    for (const dir of dirs) {
+      if (existsSync(path.join(this.cwd, dir))) {
+        toAdd.push(dir);
+      }
+    }
+
+    if (toAdd.length === 0) return;
+
+    try {
+      await gitExec(['add', ...toAdd], this.cwd);
+      const { stdout } = await gitExec(['status', '--porcelain'], this.cwd);
+      if (stdout.trim()) {
+        await gitExec(
+          ['commit', '-m', 'chore: track framework files for team mode'],
+          this.cwd,
+        );
+        logger.info('Committed framework files (.ralph/, .claude/) for clean merges');
+      }
+    } catch {
+      // May fail if already tracked or nothing to commit — safe to ignore
+    }
   }
 
   private remaining(data: FeatureList): number {
