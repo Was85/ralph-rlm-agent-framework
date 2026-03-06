@@ -1,5 +1,53 @@
 # Changelog
 
+## 3.2.0 (2026-03-07)
+
+### Security
+
+- **Shell injection prevention** — all git commands use `execFile` (no shell interpolation); CLI arguments are shell-escaped via `shellEscape()` on both Unix and Windows
+- **Safe command execution** — new `gitExec()` and `safeExecCommand()` utilities replace raw `exec()` calls throughout the codebase
+- **Commit message sanitization** — strips backticks, `$`, control chars, and limits length to prevent injection via AI-generated messages
+
+### Added
+
+- **Atomic file writes** — feature_list.json and validation-state.json writes use temp file + `rename()` to prevent corruption on crash
+- **File locking** — concurrent feature_list.json access uses file-based locks with stale detection (30s) and process exit cleanup
+- **Schema validation** — feature_list.json structure validated on every read to catch corruption early
+- **Agent timeout** — configurable timeout with SIGTERM → SIGKILL (5s grace) prevents hung agents
+- **Graceful shutdown** — SIGINT/SIGTERM handlers clean up git worktrees before exit
+- **Rebase-before-merge** — worktree branches rebased onto HEAD before merging to reduce conflicts
+- **Conflict serialization** — features conflicting 2+ times in parallel are dispatched solo next iteration
+- **Dependency-aware scheduling** — team mode groups features by dependency level for parallel execution
+- **Pre-merge cleanup** — `ensureCleanWorkingTree()` stashes or resets dirty state before each merge
+- **Framework file tracking** — `.ralph/` and `.claude/` committed before worktree creation to prevent merge errors
+
+### Fixed
+
+- **Team mode merge failures** — untracked `.ralph/prompts/` files blocked all worktree merges
+- **Cascading merge failures** — failed merge abort left unmerged state blocking subsequent merges; now cleaned with `reset --hard` fallback
+- **Dirty working tree blocking merges** — vitest cache files stashed before next merge
+- **Init safety net** — re-running init resets features to pending and undoes code changes
+- **Git stash preserves prompts** — stash excludes `.ralph/` directory during phase transitions
+- **Preflight checks** — runner detection uses `execFile` instead of shell `which`/`where`
+
+### Changed
+
+- **Team mode architecture** — rewrote from claimed_by coordination to git worktree isolation with auto-merge and verification
+- **Locked updates** — `lockedUpdate()` pattern for all concurrent feature_list.json mutations
+- **Targeted git add** — team orchestrator commits only framework files instead of `git add .`
+- **315 tests** — up from 156, covering all new security and team mode features
+
+## 3.1.0 (2026-03-05)
+
+### Added
+
+- End-to-end and unit tests for CLI commands and configuration handling
+- Mock `checkCli` in unit tests to avoid dependency on actual CLI binary
+
+### Fixed
+
+- Repository URLs updated to reflect correct GitHub account
+
 ## 3.0.0 (2026-03-02)
 
 ### Breaking Changes
