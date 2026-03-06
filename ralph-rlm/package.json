@@ -37,13 +37,13 @@
   ],
   "author": "Waseem",
   "license": "MIT",
-  "homepage": "https://github.com/alcinaNet/ralph-rlm-agent-framework#readme",
+  "homepage": "https://github.com/Was85/ralph-rlm-agent-framework#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/alcinaNet/ralph-rlm-agent-framework.git"
+    "url": "git+https://github.com/Was85/ralph-rlm-agent-framework.git"
   },
   "bugs": {
-    "url": "https://github.com/alcinaNet/ralph-rlm-agent-framework/issues"
+    "url": "https://github.com/Was85/ralph-rlm-agent-framework/issues"
   },
   "engines": {
     "node": ">=18"
