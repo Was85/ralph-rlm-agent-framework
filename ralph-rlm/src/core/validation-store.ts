@@ -1,5 +1,6 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import type { ValidationState } from '../config/types.js';
+import { atomicWriteFile } from './file-lock.js';
 
 export async function read(path: string): Promise<ValidationState> {
   const raw = await readFile(path, 'utf-8');
@@ -7,7 +8,7 @@ export async function read(path: string): Promise<ValidationState> {
 }
 
 export async function write(path: string, state: ValidationState): Promise<void> {
-  await writeFile(path, JSON.stringify(state, null, 2), 'utf-8');
+  await atomicWriteFile(path, JSON.stringify(state, null, 2));
 }
 
 export function isComplete(state: ValidationState, threshold: number): boolean {

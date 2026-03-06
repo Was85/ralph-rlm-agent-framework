@@ -1,5 +1,3 @@
-import { exec } from 'node:child_process';
-import { promisify } from 'node:util';
 import { copyFile, writeFile, readFile, cp, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
@@ -13,8 +11,7 @@ import * as logger from '../ui/logger.js';
 import { buildExecutionPlan } from './dependency-graph.js';
 import type { WorktreeManager, Worktree } from './worktree-manager.js';
 import { WorktreeManagerImpl } from './worktree-manager.js';
-
-const execAsync = promisify(exec);
+import { gitExec, sanitizeCommitMessage, safeExecCommand } from '../core/safe-exec.js';
 
 interface AgentSlot {
   featureId: string;
@@ -26,6 +23,8 @@ export class TeamOrchestrator {
   private readonly featureListPath: string;
   private readonly progressPath: string;
   private readonly worktreeManager: WorktreeManager;
+  /** Track features that have conflicted multiple times — serialize them next iteration */
+  private conflictCounts = new Map<string, number>();
 
   constructor(
     private readonly runner: Runner,
@@ -50,6 +49,24 @@ export class TeamOrchestrator {
     // Clean up orphaned worktrees from previous crashed runs
     await this.worktreeManager.cleanupAll(this.cwd);
 
+    // Register graceful shutdown handler
+    const shutdownHandler = async () => {
+      logger.warning('Shutting down — cleaning up worktrees...');
+      await this.worktreeManager.cleanupAll(this.cwd);
+      process.exit(1);
+    };
+    process.on('SIGINT', shutdownHandler);
+    process.on('SIGTERM', shutdownHandler);
+
+    try {
+      return await this.runLoop();
+    } finally {
+      process.removeListener('SIGINT', shutdownHandler);
+      process.removeListener('SIGTERM', shutdownHandler);
+    }
+  }
+
+  private async runLoop(): Promise<number> {
     // Pre-loop check
     const initial = await featureStore.read(this.featureListPath);
     const initialRemaining = this.remaining(initial);
@@ -83,7 +100,15 @@ export class TeamOrchestrator {
 
       // Process one level per iteration
       const level = plan.levels[0]!;
-      const featureIds = level.featureIds.slice(0, this.config.teammates);
+      let featureIds = level.featureIds.slice(0, this.config.teammates);
+
+      // Serialize repeat-conflict features: if a feature has conflicted 2+ times,
+      // run it solo in the next iteration to avoid repeated conflicts.
+      const repeatConflicts = featureIds.filter(id => (this.conflictCounts.get(id) ?? 0) >= 2);
+      if (repeatConflicts.length > 0 && featureIds.length > 1) {
+        featureIds = [repeatConflicts[0]!];
+        logger.info(`Serializing ${featureIds[0]} (conflicted ${this.conflictCounts.get(featureIds[0]!)} times)`);
+      }
 
       logger.teamLevel(level.level, featureIds);
 
@@ -253,30 +278,30 @@ export class TeamOrchestrator {
 
     // Ensure the worktree has committed changes
     try {
-      const { stdout } = await execAsync('git status --porcelain', { cwd: slot.worktree.path });
+      const { stdout } = await gitExec(['status', '--porcelain'], slot.worktree.path);
       if (stdout.trim()) {
-        await execAsync('git add .', { cwd: slot.worktree.path });
-        await execAsync(`git commit -m "feat: ${slot.featureId} - ${slot.description}"`, { cwd: slot.worktree.path });
+        await gitExec(['add', '.'], slot.worktree.path);
+        const msg = sanitizeCommitMessage(`feat: ${slot.featureId} - ${slot.description}`);
+        await gitExec(['commit', '-m', msg], slot.worktree.path);
       }
     } catch { /* may fail if nothing to commit */ }
 
     // Sync framework files in worktree to match main repo.
-    // Both branches modify feature_list.json (framework updates status, agent updates status).
-    // Overwrite the worktree's version with main repo's to prevent merge conflicts.
-    // The framework is the source of truth for feature_list.json.
     await this.syncFrameworkFilesToWorktree(slot.worktree);
 
-    // Commit framework state changes (feature_list.json, progress) before merge
-    // Git refuses to merge when tracked files have uncommitted changes
+    // Commit framework state changes before merge
     await this.commitFrameworkState('pre-merge state update');
 
-    // Merge worktree branch into main
+    // Merge worktree branch into main (with rebase fallback)
     const mergeResult = await this.worktreeManager.merge(slot.worktree, this.cwd);
 
     if (!mergeResult.success) {
       if (mergeResult.conflicted) {
+        // Track conflict count for serialization logic
+        const count = (this.conflictCounts.get(slot.featureId) ?? 0) + 1;
+        this.conflictCounts.set(slot.featureId, count);
         logger.warning(`Merge conflict for ${slot.featureId} — will retry next iteration`);
-        await progressLog.append(this.progressPath, `MERGE CONFLICT: ${slot.featureId} — deferred to next iteration`);
+        await progressLog.append(this.progressPath, `MERGE CONFLICT: ${slot.featureId} — deferred to next iteration (conflict #${count})`);
       } else {
         logger.warning(`Merge failed for ${slot.featureId}: ${mergeResult.error}`);
       }
@@ -286,6 +311,8 @@ export class TeamOrchestrator {
     }
 
     logger.teamMerge(slot.featureId, true);
+    // Clear conflict count on successful merge
+    this.conflictCounts.delete(slot.featureId);
 
     // Verify build + tests after merge
     const verified = await this.verify(slot.featureId);
@@ -319,7 +346,7 @@ export class TeamOrchestrator {
 
     for (const cmd of commands) {
       try {
-        await execAsync(cmd, { cwd: this.cwd, timeout: 120_000 });
+        await safeExecCommand(cmd, this.cwd, { timeout: 120_000 });
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err);
         logger.warning(`Verification failed for ${featureId}: ${cmd}`);
@@ -379,8 +406,6 @@ export class TeamOrchestrator {
 
   private async syncFrameworkFilesToWorktree(worktree: Worktree): Promise<void> {
     try {
-      // Copy main repo's feature_list.json and progress file into worktree
-      // and commit the change so the worktree branch matches main on these files
       const mainFeatureList = await readFile(this.featureListPath, 'utf-8');
       await writeFile(path.join(worktree.path, FEATURE_LIST_FILE), mainFeatureList, 'utf-8');
 
@@ -389,10 +414,10 @@ export class TeamOrchestrator {
         await writeFile(path.join(worktree.path, PROGRESS_FILE), mainProgress, 'utf-8');
       } catch { /* progress file may not exist */ }
 
-      await execAsync(`git add ${FEATURE_LIST_FILE} ${PROGRESS_FILE}`, { cwd: worktree.path });
-      const { stdout } = await execAsync('git status --porcelain', { cwd: worktree.path });
+      await gitExec(['add', FEATURE_LIST_FILE, PROGRESS_FILE], worktree.path);
+      const { stdout } = await gitExec(['status', '--porcelain'], worktree.path);
       if (stdout.trim()) {
-        await execAsync('git commit -m "chore: sync framework files with main"', { cwd: worktree.path });
+        await gitExec(['commit', '-m', 'chore: sync framework files with main'], worktree.path);
       }
     } catch {
       logger.warning(`Failed to sync framework files to worktree ${worktree.name}`);
@@ -401,20 +426,20 @@ export class TeamOrchestrator {
 
   private async commitFrameworkState(message: string): Promise<void> {
     try {
-      const { stdout } = await execAsync('git status --porcelain', { cwd: this.cwd });
+      const { stdout } = await gitExec(['status', '--porcelain'], this.cwd);
       if (stdout.trim()) {
-        await execAsync('git add .', { cwd: this.cwd });
-        await execAsync(`git commit -m "chore: ${message}"`, { cwd: this.cwd });
+        await gitExec(['add', FEATURE_LIST_FILE, PROGRESS_FILE], this.cwd);
+        await gitExec(['commit', '-m', sanitizeCommitMessage(`chore: ${message}`)], this.cwd);
       }
     } catch { /* may fail if nothing to commit */ }
   }
 
   private async finalCommit(): Promise<void> {
     try {
-      const { stdout } = await execAsync('git status --porcelain', { cwd: this.cwd });
+      const { stdout } = await gitExec(['status', '--porcelain'], this.cwd);
       if (stdout.trim()) {
-        await execAsync('git add .', { cwd: this.cwd });
-        await execAsync('git commit -m "feat: all features complete — final commit"', { cwd: this.cwd });
+        await gitExec(['add', FEATURE_LIST_FILE, PROGRESS_FILE], this.cwd);
+        await gitExec(['commit', '-m', 'feat: all features complete — final commit'], this.cwd);
         logger.success('Final commit created');
         await progressLog.append(this.progressPath, 'ALL FEATURES COMPLETE — final commit');
       }

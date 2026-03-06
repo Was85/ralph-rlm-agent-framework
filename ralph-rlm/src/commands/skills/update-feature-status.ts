@@ -14,28 +14,36 @@ export async function updateFeatureStatus(
     return { success: false, error: `Error: ${filePath} not found` };
   }
 
-  const data = await store.read(filePath);
-  const feature = store.findById(data, featureId);
+  try {
+    let message = '';
+    await store.lockedUpdate(filePath, (data) => {
+      const feature = store.findById(data, featureId);
 
-  if (!feature) {
-    return { success: false, error: `Error: Feature ${featureId} not found` };
+      if (!feature) {
+        throw new Error(`Feature ${featureId} not found`);
+      }
+
+      // Idempotent check
+      if (feature.status === status) {
+        message = `Feature ${featureId} is already '${status}'`;
+        return;
+      }
+
+      const oldStatus = feature.status;
+      feature.status = status;
+
+      // Clear last_error when completing
+      if (status === 'complete') {
+        feature.last_error = null;
+      }
+
+      recalculateStats(data);
+      message = `Updated ${featureId} status from "${oldStatus}" to "${status}"`;
+    });
+
+    return { success: true, data: message };
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    return { success: false, error: `Error: ${errorMsg}` };
   }
-
-  // Idempotent check
-  if (feature.status === status) {
-    return { success: true, data: `Feature ${featureId} is already '${status}'` };
-  }
-
-  const oldStatus = feature.status;
-  feature.status = status;
-
-  // Clear last_error when completing
-  if (status === 'complete') {
-    feature.last_error = null;
-  }
-
-  recalculateStats(data);
-  await store.write(filePath, data);
-
-  return { success: true, data: `Updated ${featureId} status from "${oldStatus}" to "${status}"` };
 }

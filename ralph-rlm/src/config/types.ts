@@ -68,6 +68,8 @@ export interface RunnerConfig {
   stream: boolean;
   maxTurns?: number;
   cwd?: string;
+  /** Timeout in milliseconds for agent invocation. 0 = no timeout. */
+  timeout?: number;
 }
 
 /** Interface for AI CLI runners */

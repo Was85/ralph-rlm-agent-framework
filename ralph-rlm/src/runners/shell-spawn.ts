@@ -1,36 +1,56 @@
 import { spawn } from 'node:child_process';
 
 /**
- * Spawns a command with proper argument quoting on all platforms.
- *
- * On Windows, Node.js `spawn` with `shell: true` joins args with spaces
- * WITHOUT quoting them individually. This breaks any arg that contains spaces
- * (e.g. a prompt string). We fix this by building the full command string
- * ourselves and passing it as a single token.
+ * Escapes a string for safe inclusion in a shell command.
+ * Uses single-quoting with interior single quotes escaped.
  */
-export function spawnWithShell(command: string, args: string[], cwd?: string): Promise<number> {
-  return new Promise((resolve) => {
-    let proc;
-
-    if (process.platform === 'win32') {
-      // Quote each arg that contains spaces or special characters.
-      // Escape any embedded double quotes first to prevent shell splitting.
-      const quoted = args.map((a) => {
-        if (!needsQuoting(a)) return a;
-        const escaped = a.replace(/"/g, '\\"');
-        return `"${escaped}"`;
-      });
-      const cmdLine = `${command} ${quoted.join(' ')}`;
-      proc = spawn(cmdLine, [], { stdio: 'inherit', shell: true, cwd });
-    } else {
-      proc = spawn(command, args, { stdio: 'inherit', shell: true, cwd });
-    }
-
-    proc.on('close', (code) => resolve(code ?? 1));
-    proc.on('error', () => resolve(1));
-  });
+function shellEscape(arg: string): string {
+  if (process.platform === 'win32') {
+    // Windows cmd.exe: wrap in double quotes, escape interior doubles and special chars
+    const escaped = arg
+      .replace(/"/g, '\\"')
+      .replace(/%/g, '%%');
+    return `"${escaped}"`;
+  }
+  // Unix: single-quote the arg, escaping any interior single quotes
+  return `'${arg.replace(/'/g, "'\\''")}'`;
 }
 
-function needsQuoting(arg: string): boolean {
-  return arg.includes(' ') || arg.includes('&') || arg.includes('|') || arg.includes('>') || arg.includes('<');
+/**
+ * Spawns a command with proper argument escaping on all platforms.
+ *
+ * Uses shell: true (necessary to resolve CLI tools on PATH), but
+ * all arguments are shell-escaped to prevent injection.
+ */
+export function spawnWithShell(
+  command: string,
+  args: string[],
+  cwd?: string,
+  timeout?: number,
+): Promise<number> {
+  return new Promise((resolve) => {
+    // Shell-escape every argument to prevent injection
+    const escapedArgs = args.map(shellEscape);
+    const cmdLine = `${command} ${escapedArgs.join(' ')}`;
+
+    const proc = spawn(cmdLine, [], { stdio: 'inherit', shell: true, cwd });
+
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    if (timeout && timeout > 0) {
+      timer = setTimeout(() => {
+        proc.kill('SIGTERM');
+        // Give it 5s to exit gracefully, then force kill
+        setTimeout(() => proc.kill('SIGKILL'), 5000);
+      }, timeout);
+    }
+
+    proc.on('close', (code) => {
+      if (timer) clearTimeout(timer);
+      resolve(code ?? 1);
+    });
+    proc.on('error', () => {
+      if (timer) clearTimeout(timer);
+      resolve(1);
+    });
+  });
 }

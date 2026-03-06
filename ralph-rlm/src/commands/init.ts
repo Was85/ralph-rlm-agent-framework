@@ -1,13 +1,10 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { exec } from 'node:child_process';
-import { promisify } from 'node:util';
 import path from 'node:path';
 import type { RalphConfig, Runner } from '../config/types.js';
 import { runPreflight } from '../core/preflight.js';
 import * as logger from '../ui/logger.js';
-
-const execAsync = promisify(exec);
+import { gitExec } from '../core/safe-exec.js';
 
 /**
  * Undo any source files the init agent created beyond the allowed outputs.
@@ -20,9 +17,18 @@ async function undoInitCodeChanges(cwd: string, featureListPath: string, progres
     const progressContent = existsSync(progressPath) ? await readFile(progressPath, 'utf-8') : null;
 
     // Reset all tracked changes and remove untracked files (except framework dirs)
-    await execAsync('git checkout -- .', { cwd }).catch(() => {});
-    // Remove untracked files but keep framework directories
-    await execAsync('git clean -fd -e .ralph/ -e .claude/ -e .github/ -e templates/ -e prd.md -e feature_list.json -e claude-progress.txt -e validation-state.json', { cwd }).catch(() => {});
+    await gitExec(['checkout', '--', '.'], cwd).catch(() => {});
+    await gitExec([
+      'clean', '-fd',
+      '-e', '.ralph/',
+      '-e', '.claude/',
+      '-e', '.github/',
+      '-e', 'templates/',
+      '-e', 'prd.md',
+      '-e', 'feature_list.json',
+      '-e', 'claude-progress.txt',
+      '-e', 'validation-state.json',
+    ], cwd).catch(() => {});
 
     // Restore our outputs
     await writeFile(featureListPath, featureListContent, 'utf-8');
@@ -47,9 +53,12 @@ export async function runInit(
     return 1;
   }
 
-  // Safety checkpoint via git stash
+  // Safety checkpoint via git stash (exclude .ralph/ to preserve prompts for Copilot)
   try {
-    await execAsync('git stash push -m "ralph-pre-init" --include-untracked', { cwd });
+    await gitExec([
+      'stash', 'push', '-m', 'ralph-pre-init', '--include-untracked',
+      '--', ':!.ralph/',
+    ], cwd);
   } catch {
     // Stash may fail if nothing to stash — that's fine
   }
@@ -89,7 +98,6 @@ export async function runInit(
       }
 
       // Safety net: undo any source code the init agent may have created.
-      // Only feature_list.json and claude-progress.txt should survive init.
       await undoInitCodeChanges(cwd, featureListPath, progressPath);
 
       logger.success('Initialization complete!');

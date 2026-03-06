@@ -1,12 +1,12 @@
 import { access } from 'node:fs/promises';
-import { exec } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import path from 'node:path';
 import type { RunnerType } from '../config/types.js';
 import * as logger from '../ui/logger.js';
 import { ensureExists } from './progress-log.js';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 export async function checkGit(cwd: string): Promise<boolean> {
   try {
@@ -19,9 +19,9 @@ export async function checkGit(cwd: string): Promise<boolean> {
 }
 
 export async function checkCli(runner: RunnerType): Promise<boolean> {
-  const cmd = process.platform === 'win32' ? `where ${runner}` : `which ${runner}`;
+  const cmd = process.platform === 'win32' ? 'where' : 'which';
   try {
-    await execAsync(cmd);
+    await execFileAsync(cmd, [runner]);
     return true;
   } catch {
     const installHint = runner === 'claude'

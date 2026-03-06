@@ -1,7 +1,5 @@
 import { unlink } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { exec } from 'node:child_process';
-import { promisify } from 'node:util';
 import path from 'node:path';
 import type { Feature, RalphConfig, Runner } from '../config/types.js';
 import { runPreflight } from '../core/preflight.js';
@@ -10,8 +8,7 @@ import { recalculateStats } from '../core/stats.js';
 import { FEATURE_LIST_FILE, PROGRESS_FILE } from '../config/defaults.js';
 import * as progressLog from '../core/progress-log.js';
 import * as logger from '../ui/logger.js';
-
-const execAsync = promisify(exec);
+import { gitExec, sanitizeCommitMessage, safeExecCommand } from '../core/safe-exec.js';
 
 /**
  * Safety net: commits uncommitted changes ONLY when a feature was completed.
@@ -20,7 +17,7 @@ const execAsync = promisify(exec);
  */
 async function ensureCommitted(cwd: string, featureListPath: string, completeBefore: Set<string>): Promise<boolean> {
   try {
-    const { stdout: status } = await execAsync('git status --porcelain', { cwd });
+    const { stdout: status } = await gitExec(['status', '--porcelain'], cwd);
     if (!status.trim()) return false; // nothing to commit
 
     // Only auto-commit if a feature was completed this iteration
@@ -42,8 +39,8 @@ async function ensureCommitted(cwd: string, featureListPath: string, completeBef
       commitMsg = `feat: ${ids} - implementation progress`;
     }
 
-    await execAsync('git add .', { cwd });
-    await execAsync(`git commit -m "${commitMsg}"`, { cwd });
+    await gitExec(['add', '.'], cwd);
+    await gitExec(['commit', '-m', sanitizeCommitMessage(commitMsg)], cwd);
     logger.warning('Safety net: auto-committed changes that the agent missed');
     return true;
   } catch {
@@ -80,7 +77,7 @@ async function verifyPreviousFeature(
 
   for (const cmd of commands) {
     try {
-      await execAsync(cmd, { cwd, timeout: 120_000 });
+      await safeExecCommand(cmd, cwd, { timeout: 120_000 });
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       logger.warning(`Verification failed: ${cmd}`);
@@ -110,10 +107,10 @@ async function verifyPreviousFeature(
  */
 async function finalCommit(cwd: string, progressPath: string): Promise<void> {
   try {
-    const { stdout: status } = await execAsync('git status --porcelain', { cwd });
+    const { stdout: status } = await gitExec(['status', '--porcelain'], cwd);
     if (status.trim()) {
-      await execAsync('git add .', { cwd });
-      await execAsync('git commit -m "feat: all features complete — final commit"', { cwd });
+      await gitExec(['add', '.'], cwd);
+      await gitExec(['commit', '-m', 'feat: all features complete — final commit'], cwd);
       logger.success('Final commit created');
       await progressLog.append(progressPath, 'ALL FEATURES COMPLETE — final commit');
     }
@@ -135,9 +132,9 @@ export async function runImplement(
     return 1;
   }
 
-  // Safety checkpoint via git stash
+  // Safety checkpoint via git stash (exclude .ralph/ to preserve prompts)
   try {
-    await execAsync('git stash push -m "ralph-pre-implement" --include-untracked', { cwd });
+    await gitExec(['stash', 'push', '-m', 'ralph-pre-implement', '--include-untracked'], cwd);
   } catch {
     // Stash may fail if nothing to stash
   }
