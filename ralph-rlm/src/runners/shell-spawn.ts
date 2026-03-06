@@ -13,8 +13,13 @@ export function spawnWithShell(command: string, args: string[], cwd?: string): P
     let proc;
 
     if (process.platform === 'win32') {
-      // Quote each arg that contains spaces or special characters
-      const quoted = args.map((a) => (needsQuoting(a) ? `"${a}"` : a));
+      // Quote each arg that contains spaces or special characters.
+      // Escape any embedded double quotes first to prevent shell splitting.
+      const quoted = args.map((a) => {
+        if (!needsQuoting(a)) return a;
+        const escaped = a.replace(/"/g, '\\"');
+        return `"${escaped}"`;
+      });
       const cmdLine = `${command} ${quoted.join(' ')}`;
       proc = spawn(cmdLine, [], { stdio: 'inherit', shell: true, cwd });
     } else {

@@ -19,7 +19,9 @@
       "Bash(do cp \"claude/skills/ralph/$skill/SKILL.md\" \"copilot/skills/ralph/$skill/SKILL.md\")",
       "Bash(done)",
       "Bash(mkdir -p instructions)",
-      "Bash(mv ralph-workflow.instructions.md csharp.instructions.md TEMPLATE.instructions.md instructions/)"
+      "Bash(mv ralph-workflow.instructions.md csharp.instructions.md TEMPLATE.instructions.md instructions/)",
+      "Bash(mkdir -p /c/alcinaNet/ralph-e2e-tests)",
+      "Read(//c/alcinaNet/**)"
     ]
   }
 }

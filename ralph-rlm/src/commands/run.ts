@@ -247,7 +247,7 @@ export async function runImplement(
     const prompt = [
       `CRITICAL CONSTRAINT: You are assigned EXACTLY ONE feature. After completing it you MUST exit immediately. Do NOT look for or implement any other features.`,
       `YOUR ASSIGNED FEATURE: ${targetFeature.id} — ${targetFeature.description}.`,
-      `WORKFLOW: 1) Read ${implPromptPath} for coding guidelines ONLY (IGNORE any instructions about finding, selecting, or cycling through features — your feature is already assigned). 2) Read claude-progress.txt for codebase patterns. 3) Implement ONLY ${targetFeature.id}. 4) Run tests. 5) If tests pass: git add . && git commit -m "feat: ${targetFeature.id} - ${targetFeature.description}", then EXIT. 6) If tests fail: log the error and EXIT.`,
+      `WORKFLOW: 1) Read ${implPromptPath} for coding guidelines ONLY (IGNORE any instructions about finding, selecting, or cycling through features — your feature is already assigned). 2) Read claude-progress.txt for codebase patterns. 3) Implement ONLY ${targetFeature.id}. 4) Run tests. 5) If tests pass: git add . && git commit -m 'feat: ${targetFeature.id} - ${targetFeature.description}', then EXIT. 6) If tests fail: log the error and EXIT.`,
       `AFTER COMMITTING ${targetFeature.id} YOU MUST EXIT IMMEDIATELY. The framework manages feature sequencing — it will start a new session for the next feature. Implementing more than one feature per session will cause errors.`,
     ].join(' ');
 
