@@ -3,8 +3,9 @@
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 import path from 'node:path';
-import { DEFAULT_CONFIG, FEATURE_LIST_FILE } from './config/defaults.js';
-import type { RalphConfig, FeatureStatus } from './config/types.js';
+import { FEATURE_LIST_FILE } from './config/defaults.js';
+import type { FeatureStatus } from './config/types.js';
+import { buildConfig } from './config/build-config.js';
 import { createRunner } from './runners/runner-factory.js';
 import { runInit } from './commands/init.js';
 import { runValidate } from './commands/validate.js';
@@ -27,23 +28,6 @@ function resolvePromptsDir(): string {
 
 function resolveSkillsDir(): string {
   return path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '.claude', 'skills');
-}
-
-function buildConfig(argv: Record<string, unknown>): RalphConfig {
-  return {
-    runner: (argv['runner'] as RalphConfig['runner']) ?? DEFAULT_CONFIG.runner,
-    maxIterations: (argv['maxIterations'] as number) ?? DEFAULT_CONFIG.maxIterations,
-    maxValidateIterations: (argv['maxValidateIterations'] as number) ?? DEFAULT_CONFIG.maxValidateIterations,
-    coverageThreshold: (argv['coverageThreshold'] as number) ?? DEFAULT_CONFIG.coverageThreshold,
-    sleepBetween: (argv['sleepBetween'] as number) ?? DEFAULT_CONFIG.sleepBetween,
-    verbose: (argv['verbose'] as boolean) ?? DEFAULT_CONFIG.verbose,
-    debug: (argv['debug'] as boolean) ?? DEFAULT_CONFIG.debug,
-    dangerouslySkipPermissions: ((argv['dangerouslySkipPermissions'] as boolean) || (argv['allowAllTools'] as boolean)) ?? DEFAULT_CONFIG.dangerouslySkipPermissions,
-    stream: (argv['stream'] as boolean) ?? DEFAULT_CONFIG.stream,
-    team: (argv['team'] as boolean) ?? DEFAULT_CONFIG.team,
-    teammates: (argv['teammates'] as number) ?? DEFAULT_CONFIG.teammates,
-    skipReview: (argv['skipReview'] as boolean) ?? DEFAULT_CONFIG.skipReview,
-  };
 }
 
 const cli = yargs(hideBin(process.argv))
