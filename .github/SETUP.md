@@ -1,45 +1,52 @@
 # Repository Setup Guide
 
-This file describes the **one-time manual steps** needed to finish locking down the `main` branch.
-Everything below is done in the GitHub website UI — no pipeline or code changes required.
+---
+
+## Do we really need files in the repo?
+
+Short answer: **for two things, yes — because GitHub has no UI alternative for them.**
+
+| What | Needs a file in the repo? | Why |
+|---|---|---|
+| **Branch protection rules** | ❌ No | Configured entirely in GitHub Settings UI. No file involved. |
+| **CODEOWNERS** | ✅ Yes | GitHub reads this file from the repo to know who must review PRs. There is no Settings UI equivalent — without the file, the "Require review from Code Owners" option does nothing. |
+| **PR template** | ✅ Yes | GitHub reads this file from the repo to pre-fill new PR descriptions. There is no Settings UI equivalent. |
+
+So: branch protection = pure config, no file needed. CODEOWNERS + PR template = must be files.
 
 ---
 
-## What's already in place (no action needed)
+## What's already handled by the files in this repo
 
-| File | What it does |
-|---|---|
-| `.github/CODEOWNERS` | Tells GitHub that `@Was85` must review every PR before it can be merged |
-| `.github/pull_request_template.md` | Auto-fills a checklist whenever someone opens a PR |
+Once this PR is merged, these two files are active — GitHub reads them automatically, no CI pipeline involved:
 
-These files take effect automatically once this PR is merged. No CI job runs them.
+- `.github/CODEOWNERS` → `@Was85` is auto-requested as a reviewer on every PR
+- `.github/pull_request_template.md` → new PRs open with a pre-filled description checklist
 
 ---
 
 ## One-time step: enable branch protection in GitHub Settings
 
-Branch protection rules live in GitHub's settings, not in the repository files.
-You only have to do this **once**, after merging this PR.
+This is the only piece that lives in GitHub's UI, not in the repo.
+Do this **once** after merging this PR.
 
-1. Open the repo on GitHub and click **Settings**.
-2. In the left sidebar, click **Branches**.
-3. Under **Branch protection rules**, click **Add rule** (or **Add branch ruleset** if you see the newer UI).
-4. In **Branch name pattern**, type `main`.
-5. Enable the following options:
+1. Go to the repo on GitHub → **Settings** → **Branches** → **Add rule**
+   (or **Add branch ruleset** in the newer UI)
+2. Set **Branch name pattern** to `main`
+3. Enable these options:
 
    | Option | Why |
    |---|---|
-   | ✅ Require a pull request before merging | No one can push directly to `main` |
+   | ✅ Require a pull request before merging | No direct pushes to `main` |
    | ✅ Required approvals: **1** | Every PR needs at least one approval |
-   | ✅ Require review from Code Owners | Forces your review specifically (via `CODEOWNERS`) |
-   | ✅ Dismiss stale reviews when new commits are pushed | Approval resets if the author pushes more changes |
-   | ✅ Require status checks to pass before merging | Blocks merge if CI fails |
-   | &nbsp;&nbsp;&nbsp;→ Search and add: **CI / test** | This is the check that the existing `ci.yml` workflow reports |
-   | ✅ Require conversation resolution before merging | All review comments must be resolved |
-   | ✅ Do not allow bypassing the above settings | Even you as admin must go through a PR |
-   | ❌ Allow force pushes | Off — prevents rewriting history |
-   | ❌ Allow deletions | Off — no one can delete `main` |
+   | ✅ Require review from Code Owners | Ties in the `CODEOWNERS` file — forces your review |
+   | ✅ Dismiss stale reviews when new commits are pushed | Approval resets if more commits are pushed |
+   | ✅ Require status checks to pass → add **CI / test** | Blocks merge if CI fails |
+   | ✅ Require conversation resolution before merging | All review threads must be resolved |
+   | ✅ Do not allow bypassing the above settings | Even you as admin must use a PR |
+   | ❌ Allow force pushes | Off |
+   | ❌ Allow deletions | Off |
 
-6. Click **Create** (or **Save changes**).
+4. Click **Create** (or **Save changes**)
 
-That's it. From this point on, the only way to change `main` is through a PR that you approve.
+Done. `main` is now fully protected.
