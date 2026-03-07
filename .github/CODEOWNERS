@@ -1,9 +1,0 @@
-# CODEOWNERS
-# This file specifies code owners who are automatically requested for review
-# when a pull request modifies code that they own.
-#
-# Each line is a file pattern followed by one or more owners.
-# The last matching pattern takes precedence.
-
-# @Was85 is the owner of everything in this repo and must review all PRs.
-* @Was85
