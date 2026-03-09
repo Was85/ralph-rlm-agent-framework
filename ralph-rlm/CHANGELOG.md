@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.2.1 (2026-03-09)
+
+### Fixed
+
+- **Verification never blocks features** — `verifyPreviousFeature` now checks `max_attempts_per_feature` after incrementing attempts, matching team-orchestrator behavior; previously verification failures looped until the 50-iteration hard cap
+- **Verification fails after agent tests pass** — added 3-second delay before verification to let file locks release (Windows dotnet/MSBuild), and increased verification timeout from 120s to 300s
+
 ## 3.2.0 (2026-03-07)
 
 ### Security

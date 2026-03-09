@@ -347,11 +347,15 @@ export class TeamOrchestrator {
 
     if (!build_command && !test_command) return true;
 
+    // Brief pause before verification to let file locks release (especially on Windows
+    // where dotnet/MSBuild may still hold handles from the agent's build/test run).
+    await new Promise(resolve => setTimeout(resolve, 3_000));
+
     const commands = [build_command, test_command].filter((c): c is string => !!c);
 
     for (const cmd of commands) {
       try {
-        await safeExecCommand(cmd, this.cwd, { timeout: 120_000 });
+        await safeExecCommand(cmd, this.cwd, { timeout: 300_000 });
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err);
         logger.warning(`Verification failed for ${featureId}: ${cmd}`);
