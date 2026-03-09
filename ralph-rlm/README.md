@@ -124,30 +124,31 @@ ralph auto --runner copilot
 
 Same as above but uses GitHub Copilot CLI instead of Claude Code. Use `--allow-all-tools` for fully autonomous mode.
 
-### 3. Parallel Team with Claude Code
+### 3. Parallel Team Mode
 
 ```bash
-ralph run --team --teammates 5
+ralph run --team --teammates 3
 ```
 
-A team lead agent spawns N implementer agents + 1 reviewer. Multiple features are built simultaneously. Best for large projects (20+ features) where you want faster wall-clock time.
+Multiple features are built simultaneously using **git worktrees** for isolation. Each agent works in its own worktree branch, and results are merged back to the main branch after verification. Best for projects with many independent features.
 
 Team mode differences:
-- **Feature claiming** — each agent claims the next available pending feature by setting the `claimed_by` field, preventing two agents from working on the same feature
-- **Code review** — each completed feature is reviewed before being marked done (skip with `--skip-review`)
-- **`claimed_by` field** — tracks which agent owns each in-progress feature
-- **Default: 3 implementers + 1 reviewer** — configurable with `--teammates N`
+- **Git worktree isolation** — each agent works in a separate worktree, so parallel agents never interfere with each other
+- **Dependency-aware scheduling** — features are grouped by dependency level; independent features run in parallel, dependent ones wait
+- **Auto-merge with verification** — after each agent completes, its branch is merged and build+tests are re-run; failed merges are reverted automatically
+- **Conflict serialization** — features that conflict twice in parallel are dispatched solo in the next iteration
+- **Rebase-before-merge** — worktree branches are rebased onto HEAD before merging to reduce conflicts
+- **Default: 2 parallel agents** — configurable with `--teammates N`
 
 ```
 Sequential                           Team (--team)
-+----------------------+             +----------------------+
-|  while (pending) {   |             |  Team Lead           |
-|    invoke AI         |             |    +-- Implementer-1 |
-|    check status      |             |    +-- Implementer-2 |
-|  }                   |             |    +-- Implementer-3 |
-|  1 feature at a time |             |    +-- Reviewer      |
-+----------------------+             |  N features at once  |
-                                     +----------------------+
++----------------------+             +---------------------------+
+|  while (pending) {   |             |  Orchestrator             |
+|    invoke AI         |             |    +-- Worktree-1 (F001)  |
+|    check status      |             |    +-- Worktree-2 (F002)  |
+|  }                   |             |  Merge → Verify → Next    |
+|  1 feature at a time |             |  N features in parallel   |
++----------------------+             +---------------------------+
 ```
 
 ## CLI Reference
@@ -165,7 +166,8 @@ Sets up project files for Ralph in the current directory. Run this once per proj
    - Creates `.claude/rules/` with coding standard rules that Claude Code auto-loads when editing matching file types
    - Creates `.claude/settings.json` with recommended Claude Code settings
 4. If `--runner copilot`:
-   - Creates `.github/instructions/` with equivalent instruction files for GitHub Copilot
+   - Creates `.github/instructions/` with instruction files for GitHub Copilot (Ralph workflow, C# coding standards, plus a template for your own)
+   - Creates `.github/skills/ralph/` with SKILL.md files — same Ralph skills as the Claude version, in Copilot's agent skills format
 5. Creates `prd.md` from the template (a structured starter document with sections for Project Overview, Functional Requirements, Non-Functional Requirements, etc.)
 6. **Skips any file/directory that already exists** — safe to re-run without overwriting your changes
 
@@ -179,8 +181,6 @@ ralph scaffold --runner copilot   # Scaffold for GitHub Copilot instead
 | `--runner` | `claude` | Which AI tool to scaffold for: `claude` or `copilot` |
 
 **Returns:** `0` on success, `1` if scaffold-assets not found or file I/O errors.
-
-> **Note for Copilot users:** The Copilot scaffolding is currently minimal. You may need to manually add instruction files to `.github/instructions/`.
 
 ---
 
@@ -337,19 +337,22 @@ Phase 3. The implementation loop. Picks up features one by one, implements them,
 **What it does step by step (team mode with `--team`):**
 
 1. **Routes to TeamOrchestrator** instead of the sequential loop
-2. **Pre-loop check** — same as sequential (checks remaining/blocked counts)
+2. **Pre-loop setup**:
+   - Cleans up orphaned worktrees from previous crashed runs
+   - Commits framework files (`.ralph/`, `.claude/`) so worktree merges work cleanly
 3. **Enters the team loop** (up to `--max-iterations`):
-   - **Shows progress snapshot** — displays feature counts by status
-   - **Calculates max turns** — `50 + (remaining_features × 5)` so the AI gets enough time proportional to the work
-   - **Builds a team prompt** — includes teammate count, reviewer toggle, remaining features, working directory, iteration number
-   - **Invokes the AI as a team lead** — the AI spawns N implementer agents + 1 reviewer. Each implementer:
-     - Calls `ralph skill claim-feature --teammate implementer-1` (atomic claim with file locking)
-     - Implements the claimed feature
-     - If `--skip-review` is false, the reviewer checks the code before marking complete
-   - **Recalculates stats** after each iteration (safety net)
-   - **Shows progress snapshot** — displays updated counts
-   - **Checks exit conditions** — same as sequential (all complete, all blocked, or max iterations)
-4. **Prints post-run report** — detailed summary of all features with their final status, attempts, and errors
+   - **Builds execution plan** — analyzes feature dependencies and groups independent features into levels
+   - **Creates git worktrees** — one per agent, each on its own branch (`ralph/F001`, `ralph/F002`, etc.)
+   - **Dispatches agents in parallel** — each agent works in its isolated worktree on one feature
+   - **Merges results sequentially** — for each completed feature:
+     - Ensures clean working tree (stash or reset)
+     - Rebases the worktree branch onto HEAD
+     - Merges with `--no-ff`
+     - Runs build + test verification
+     - Reverts the merge if verification fails
+   - **Conflict handling** — features that conflict 2+ times are dispatched solo in the next iteration
+   - **Cleans up worktrees** after each batch
+   - **Checks exit conditions** — all complete, all blocked, or max iterations
 
 ```bash
 # === Sequential (default) ===
@@ -599,13 +602,15 @@ ralph auto --stream                           # Stream JSON output from Claude
 
 ### Files `ralph scaffold` Creates
 
-| Path | Description |
-|------|-------------|
-| `.claude/skills/ralph/` | SKILL.md files (7 skills) — AI agents discover these at runtime and use them to interact with feature_list.json |
-| `.claude/rules/` | Coding standards auto-loaded by Claude Code when working with matching file types (includes templates for C#, Playwright, etc.) |
-| `.claude/settings.json` | Claude Code workspace settings — configures integration with SKILL.md files and rules |
-| `templates/` | Templates for feature_list.json, prd.md, validation-state.json |
-| `prd.md` | Starter template for your requirements |
+| Path | Runner | Description |
+|------|--------|-------------|
+| `.claude/skills/ralph/` | Claude | SKILL.md files (7 skills) — AI agents discover these at runtime and use them to interact with feature_list.json |
+| `.claude/rules/` | Claude | Coding standards auto-loaded by Claude Code when working with matching file types (includes templates for C#, Playwright, etc.) |
+| `.claude/settings.json` | Claude | Claude Code workspace settings — configures integration with SKILL.md files and rules |
+| `.github/skills/ralph/` | Copilot | SKILL.md files (same 7 skills) — Copilot agent skills format |
+| `.github/instructions/` | Copilot | Instruction files for coding standards and Ralph workflow guidance |
+| `templates/` | Both | Templates for feature_list.json, prd.md, validation-state.json |
+| `prd.md` | Both | Starter template for your requirements |
 
 ### Feature Statuses
 
@@ -698,7 +703,12 @@ You can edit this file manually at any time:
 - **Max attempts per feature** — features that fail too many times (default: 5) are marked `blocked`, not retried forever
 - **Stats recalculation** — after every iteration, Ralph recalculates feature counts from the actual features array (safety net against AI writing incorrect stats)
 - **Tool permissions** — by default, the AI asks permission for each tool use. Use `--dangerously-skip-permissions` only when you trust the AI to operate autonomously
-- **Feature claiming** — team mode uses `claimed_by` field to prevent two agents from working on the same feature
+- **Shell injection prevention** — all git commands use `execFile` (no shell interpolation); user-facing commands are shell-escaped
+- **Atomic file writes** — feature_list.json writes use temp file + rename to prevent corruption on crash
+- **File locking** — concurrent access to feature_list.json (team mode) uses file-based locks with stale lock detection
+- **Schema validation** — feature_list.json is validated on every read to catch corruption early
+- **Agent timeout** — configurable timeout with SIGTERM → SIGKILL escalation prevents hung agents
+- **Graceful shutdown** — SIGINT/SIGTERM handlers clean up worktrees before exit
 
 ## Tips for Better Results
 
@@ -752,7 +762,7 @@ These are loaded at runtime and passed to the AI CLI as the initial instruction:
 
 ### SKILL.md Files (created by `ralph scaffold`)
 
-These are placed in your project's `.claude/skills/ralph/` directory. Claude Code discovers them at runtime and uses them to understand what CLI commands are available:
+These are placed in your project's `.claude/skills/ralph/` (Claude) or `.github/skills/ralph/` (Copilot) directory. Both agents discover them at runtime and use them to understand what CLI commands are available:
 
 | Skill | What It Describes |
 |-------|-------------------|
@@ -806,10 +816,12 @@ ralph validate                    # Re-run validation only
 ralph-rlm/
 ├── src/
 │   ├── cli.ts                      # CLI entry point (yargs)
-│   ├── config/                     # Types and default values
-│   ├── core/                       # Data layer
-│   │   ├── feature-store.ts        #   Read/write feature_list.json
+│   ├── config/                     # Types, defaults, config builder
+│   ├── core/                       # Data layer and utilities
+│   │   ├── feature-store.ts        #   Read/write feature_list.json (atomic, locked)
 │   │   ├── validation-store.ts     #   Read/write validation-state.json
+│   │   ├── file-lock.ts            #   File-based locking with stale detection
+│   │   ├── safe-exec.ts            #   Shell-safe command execution (gitExec, safeExecCommand)
 │   │   ├── stats.ts                #   Recalculate stats from features
 │   │   ├── preflight.ts            #   Pre-run checks (git, CLI, files)
 │   │   └── progress-log.ts         #   Append to progress file
@@ -825,14 +837,16 @@ ralph-rlm/
 │   ├── runners/                    # AI CLI adapters
 │   │   ├── claude-runner.ts        #   Claude Code CLI
 │   │   ├── copilot-runner.ts       #   GitHub Copilot CLI
+│   │   ├── shell-spawn.ts          #   Shell-escaped process spawning
 │   │   └── runner-factory.ts       #   Creates runner from --runner flag
-│   ├── team/                       # Parallel mode
-│   │   ├── file-lock.ts            #   Cross-platform file locking
-│   │   └── team-orchestrator.ts    #   Spawn and monitor agent teams
+│   ├── team/                       # Parallel mode (git worktrees)
+│   │   ├── team-orchestrator.ts    #   Dispatch agents, merge results
+│   │   ├── worktree-manager.ts     #   Create/merge/cleanup git worktrees
+│   │   └── dependency-graph.ts     #   Feature dependency ordering
 │   └── ui/                         # Console output
 ├── prompts/                        # Agent prompt templates (bundled in package)
 ├── scaffold-assets/                # Project setup templates
-└── tests/                          # 156 unit + integration tests
+└── tests/                          # 315 unit + integration tests
 ```
 
 ## Credits
