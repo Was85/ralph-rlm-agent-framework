@@ -32,9 +32,10 @@ export async function runOptimize(
 Then read these files in the current working directory:
 - feature_list.json — this is what you will improve
 - prd.md — the source of truth (read-only, do NOT modify)
-- claude-progress.txt — check the last 50 lines for errors and blocked features (read-only, do NOT modify)
 
-Apply 1-2 mutations from your instructions, then write the improved feature_list.json back to disk.
+Go through EVERY feature and make each one small, detailed, and testable.
+Compare against prd.md to ensure complete coverage.
+Write the improved feature_list.json back to disk.
 Do NOT create any other files. Do NOT implement any code.`;
 
   await runner.invoke(prompt, {

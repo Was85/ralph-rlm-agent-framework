@@ -145,18 +145,7 @@ Docs: https://www.npmjs.com/package/@alcinanet/ralph-rlm`)
       .option('optimize', {
         type: 'boolean',
         default: false,
-        describe: 'Enable optimizer loop around run phase',
-      })
-      .option('generations', {
-        alias: 'g',
-        type: 'number',
-        default: 5,
-        describe: 'Max optimizer generations',
-      })
-      .option('stale-limit', {
-        type: 'number',
-        default: 3,
-        describe: 'Stop after N generations with no improvement',
+        describe: 'Refine features before implementation (init → validate → optimize → run)',
       });
   }, async (argv) => {
     const config = buildConfig(argv);

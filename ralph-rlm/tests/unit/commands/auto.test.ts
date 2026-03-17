@@ -10,11 +10,6 @@ vi.mock('../../../src/core/preflight.js', () => ({
   runPreflight: vi.fn().mockResolvedValue(true),
 }));
 
-vi.mock('../../../src/core/safe-exec.js', () => ({
-  gitExec: vi.fn().mockResolvedValue({ stdout: 'abc123\n', stderr: '' }),
-  sanitizeCommitMessage: (msg: string) => msg.slice(0, 500),
-  safeExecCommand: vi.fn().mockResolvedValue({ stdout: '', stderr: '' }),
-}));
 
 function makeConfig(overrides: Partial<RalphConfig> = {}): RalphConfig {
   return { ...DEFAULT_CONFIG, sleepBetween: 0, ...overrides };
@@ -162,7 +157,7 @@ describe('auto command', () => {
     expect(invokeCount).toBe(3); // init + validate + run
   });
 
-  it('calls optimizer loop when optimize flag is true', async () => {
+  it('calls optimizer before run when optimize flag is true', async () => {
     const featureList: FeatureList = {
       project: 'test',
       config: { max_attempts_per_feature: 5 },
@@ -198,7 +193,7 @@ describe('auto command', () => {
     });
 
     const result = await runAuto(
-      makeConfig({ optimize: true, generations: 1, maxIterations: 1 }),
+      makeConfig({ optimize: true, maxIterations: 1 }),
       promptsDir,
       runner,
       tmpDir,

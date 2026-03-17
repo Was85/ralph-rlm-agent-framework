@@ -94,8 +94,6 @@ export interface RalphConfig {
   teammates: number;
   skipReview: boolean;
   optimize: boolean;
-  generations: number;
-  staleLimit: number;
 }
 
 /** Result of a skill command */
