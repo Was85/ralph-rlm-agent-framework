@@ -13,6 +13,9 @@ export const DEFAULT_CONFIG: RalphConfig = {
   team: false,
   teammates: 3,
   skipReview: false,
+  optimize: false,
+  generations: 5,
+  staleLimit: 3,
 };
 
 export const DEFAULT_FEATURE_LIST_CONFIG: FeatureListConfig = {
@@ -25,6 +28,7 @@ export const VALIDATION_STATE_FILE = 'validation-state.json';
 export const PROGRESS_FILE = 'claude-progress.txt';
 export const PRD_FILE = 'prd.md';
 export const DEBUG_LOG_FILE = 'ralph-debug.log';
+export const OPTIMIZER_LOG_FILE = 'ralph-optimizer-log.json';
 export const LOCK_STALE_MS = 30_000;
 export const LOCK_RETRY_MS = 1_000;
 export const LOCK_RETRIES = 30;

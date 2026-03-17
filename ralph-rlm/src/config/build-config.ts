@@ -15,5 +15,8 @@ export function buildConfig(argv: Record<string, unknown>): RalphConfig {
     team: (argv['team'] as boolean) ?? DEFAULT_CONFIG.team,
     teammates: (argv['teammates'] as number) ?? DEFAULT_CONFIG.teammates,
     skipReview: (argv['skipReview'] as boolean) ?? DEFAULT_CONFIG.skipReview,
+    optimize: (argv['optimize'] as boolean) ?? DEFAULT_CONFIG.optimize,
+    generations: (argv['generations'] as number) ?? DEFAULT_CONFIG.generations,
+    staleLimit: (argv['staleLimit'] as number) ?? DEFAULT_CONFIG.staleLimit,
   };
 }
