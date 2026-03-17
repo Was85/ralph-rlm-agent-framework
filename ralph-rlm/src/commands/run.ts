@@ -55,7 +55,7 @@ function sleep(seconds: number): Promise<void> {
 
 /**
  * Verifies that previously completed features still build and pass tests.
- * If verification fails, reverts the features back to in_progress.
+ * If verification fails, reverts the features back to in_progress (or blocked if max attempts reached).
  * Returns true if verification passed (or was skipped).
  */
 async function verifyPreviousFeature(
@@ -73,11 +73,15 @@ async function verifyPreviousFeature(
 
   logger.info(`Verifying previously completed feature(s): ${completedIds.join(', ')}`);
 
+  // Brief pause before verification to let file locks release (especially on Windows
+  // where dotnet/MSBuild may still hold handles from the agent's build/test run).
+  await new Promise(resolve => setTimeout(resolve, 3_000));
+
   const commands = [build_command, test_command].filter((c): c is string => !!c);
 
   for (const cmd of commands) {
     try {
-      await safeExecCommand(cmd, cwd, { timeout: 120_000 });
+      await safeExecCommand(cmd, cwd, { timeout: 300_000 });
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       logger.warning(`Verification failed: ${cmd}`);
@@ -85,9 +89,15 @@ async function verifyPreviousFeature(
       for (const id of completedIds) {
         const feature = featureStore.findById(data, id);
         if (feature && feature.status === 'complete') {
-          feature.status = 'in_progress';
           feature.attempts++;
-          feature.last_error = `Verification failed: ${cmd} — ${errorMsg}`;
+          if (feature.attempts >= data.config.max_attempts_per_feature) {
+            feature.status = 'blocked';
+            feature.last_error = `Max attempts (${data.config.max_attempts_per_feature}) reached — verification failed: ${cmd}`;
+            logger.warning(`${id} blocked after ${feature.attempts} attempts (verification failure)`);
+          } else {
+            feature.status = 'in_progress';
+            feature.last_error = `Verification failed: ${cmd} — ${errorMsg}`;
+          }
         }
       }
       recalculateStats(data);

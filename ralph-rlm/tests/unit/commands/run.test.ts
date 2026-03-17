@@ -416,4 +416,28 @@ describe('run command', () => {
     expect(feature?.status).toBe('blocked');
     expect(feature?.attempts).toBe(2);
   });
+
+  it('marks feature as blocked when verification fails and max attempts reached', async () => {
+    const data = createFeatureList({
+      pending: 1,
+      config: { test_command: 'exit 1', max_attempts_per_feature: 2 },
+    });
+    await setupRunEnv(tmpDir, promptsDir, data);
+
+    const runner = createMockRunner(async () => {
+      // Agent always marks it complete, but verification will fail
+      await simulateAgentComplete(tmpDir);
+    });
+
+    const result = await runImplement(makeConfig({ maxIterations: 5 }), promptsDir, runner, tmpDir);
+
+    expect(result).toBe(2); // blocked
+
+    const finalRaw = await readFile(path.join(tmpDir, 'feature_list.json'), 'utf-8');
+    const final = JSON.parse(finalRaw) as FeatureList;
+    const feature = final.features[0];
+    expect(feature?.status).toBe('blocked');
+    expect(feature?.attempts).toBe(2);
+    expect(feature?.last_error).toContain('verification failed');
+  });
 });
