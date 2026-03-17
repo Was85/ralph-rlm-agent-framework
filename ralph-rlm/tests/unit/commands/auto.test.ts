@@ -10,6 +10,12 @@ vi.mock('../../../src/core/preflight.js', () => ({
   runPreflight: vi.fn().mockResolvedValue(true),
 }));
 
+vi.mock('../../../src/core/safe-exec.js', () => ({
+  gitExec: vi.fn().mockResolvedValue({ stdout: 'abc123\n', stderr: '' }),
+  sanitizeCommitMessage: (msg: string) => msg.slice(0, 500),
+  safeExecCommand: vi.fn().mockResolvedValue({ stdout: '', stderr: '' }),
+}));
+
 function makeConfig(overrides: Partial<RalphConfig> = {}): RalphConfig {
   return { ...DEFAULT_CONFIG, sleepBetween: 0, ...overrides };
 }
@@ -154,5 +160,51 @@ describe('auto command', () => {
 
     expect(result).toBe(0);
     expect(invokeCount).toBe(3); // init + validate + run
+  });
+
+  it('calls optimizer loop when optimize flag is true', async () => {
+    const featureList: FeatureList = {
+      project: 'test',
+      config: { max_attempts_per_feature: 5 },
+      stats: { total: 1, complete: 0, in_progress: 0, pending: 1, blocked: 0 },
+      features: [{ id: 'F001', description: 'A', status: 'pending', attempts: 0, last_error: null }],
+    };
+    await writeFile(path.join(tmpDir, 'feature_list.json'), JSON.stringify(featureList, null, 2), 'utf-8');
+    const valState: ValidationState = {
+      coverage_percent: 100,
+      iteration: 1,
+      status: 'complete',
+      gaps: [],
+      last_updated: new Date().toISOString(),
+    };
+    await writeFile(path.join(tmpDir, 'validation-state.json'), JSON.stringify(valState, null, 2), 'utf-8');
+    await writeFile(path.join(promptsDir, 'optimizer.md'), '# Optimizer', 'utf-8');
+    await writeFile(path.join(promptsDir, 'implementer.md'), 'Implement', 'utf-8');
+    await writeFile(path.join(tmpDir, 'prd.md'), '# PRD\n', 'utf-8');
+
+    let optimizerPromptSeen = false;
+    const runner = createMockRunner(async (prompt) => {
+      if (prompt.includes('optimizer.md')) {
+        optimizerPromptSeen = true;
+      }
+      // Complete the feature on run
+      const fl: FeatureList = {
+        project: 'test',
+        config: { max_attempts_per_feature: 5 },
+        stats: { total: 1, complete: 1, in_progress: 0, pending: 0, blocked: 0 },
+        features: [{ id: 'F001', description: 'A', status: 'complete', attempts: 1, last_error: null }],
+      };
+      await writeFile(path.join(tmpDir, 'feature_list.json'), JSON.stringify(fl, null, 2), 'utf-8');
+    });
+
+    const result = await runAuto(
+      makeConfig({ optimize: true, generations: 1, maxIterations: 1 }),
+      promptsDir,
+      runner,
+      tmpDir,
+    );
+
+    expect(result).toBe(0);
+    expect(optimizerPromptSeen).toBe(true);
   });
 });

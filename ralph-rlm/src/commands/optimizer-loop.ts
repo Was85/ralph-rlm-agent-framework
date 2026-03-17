@@ -80,13 +80,12 @@ export async function runOptimizerLoop(
     // 3. Run implementation with budget
     logger.info(`Running implementation with budget of ${config.maxIterations}...`);
 
-    let runResult: number;
     if (config.team) {
       const { TeamOrchestrator } = await import('../team/team-orchestrator.js');
       const orchestrator = new TeamOrchestrator(runner, config, promptsDir, cwd);
-      runResult = await orchestrator.run();
+      await orchestrator.run();
     } else {
-      runResult = await runImplement(config, promptsDir, runner, cwd);
+      await runImplement(config, promptsDir, runner, cwd);
     }
 
     // 4. Score

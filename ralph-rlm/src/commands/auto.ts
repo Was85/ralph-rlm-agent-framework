@@ -7,6 +7,7 @@ import * as logger from '../ui/logger.js';
 import { runInit } from './init.js';
 import { runValidate } from './validate.js';
 import { runImplement } from './run.js';
+import { runOptimizerLoop } from './optimizer-loop.js';
 
 export async function runAuto(
   config: RalphConfig,
@@ -56,6 +57,9 @@ export async function runAuto(
     logger.info('Validation already complete, skipping validate phase');
   }
 
-  // Phase 3: Implement
+  // Phase 3: Implement (with optional optimizer loop)
+  if (config.optimize) {
+    return runOptimizerLoop(config, promptsDir, runner, cwd);
+  }
   return runImplement(config, promptsDir, runner, cwd);
 }

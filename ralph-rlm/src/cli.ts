@@ -15,6 +15,7 @@ import { runAuto } from './commands/auto.js';
 import { displayStatus } from './commands/status.js';
 import { runAuthor } from './commands/author.js';
 import { runScaffold } from './commands/scaffold.js';
+import { runOptimize } from './commands/optimize.js';
 import { getNextFeature } from './commands/skills/get-next-feature.js';
 import { getFeatureStats } from './commands/skills/get-feature-stats.js';
 import { updateFeatureStatus } from './commands/skills/update-feature-status.js';
@@ -139,10 +140,34 @@ Docs: https://www.npmjs.com/package/@alcinanet/ralph-rlm`)
       process.exitCode = await runImplement(config, resolvePromptsDir(), runner);
     }
   })
-  .command('auto', 'All phases sequentially', {}, async (argv) => {
+  .command('auto', 'All phases sequentially', (y) => {
+    return y
+      .option('optimize', {
+        type: 'boolean',
+        default: false,
+        describe: 'Enable optimizer loop around run phase',
+      })
+      .option('generations', {
+        alias: 'g',
+        type: 'number',
+        default: 5,
+        describe: 'Max optimizer generations',
+      })
+      .option('stale-limit', {
+        type: 'number',
+        default: 3,
+        describe: 'Stop after N generations with no improvement',
+      });
+  }, async (argv) => {
     const config = buildConfig(argv);
     const runner = createRunner(config.runner);
     const code = await runAuto(config, resolvePromptsDir(), runner);
+    process.exitCode = code;
+  })
+  .command('optimize', 'Optimize feature_list.json for better completion rates', {}, async (argv) => {
+    const config = buildConfig(argv);
+    const runner = createRunner(config.runner);
+    const code = await runOptimize(config, resolvePromptsDir(), runner);
     process.exitCode = code;
   })
   .command('status', 'Show project state', {}, async () => {
