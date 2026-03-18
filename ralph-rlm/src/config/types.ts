@@ -93,6 +93,7 @@ export interface RalphConfig {
   team: boolean;
   teammates: number;
   skipReview: boolean;
+  optimize: boolean;
 }
 
 /** Result of a skill command */

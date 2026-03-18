@@ -89,6 +89,12 @@ export async function runPreflight(
       await ensureExists(path.join(cwd, 'claude-progress.txt'));
       break;
 
+    case 'optimize':
+      if (!(await checkFile(path.join(cwd, 'prd.md'), 'prd.md'))) return false;
+      if (!(await checkFile(path.join(cwd, 'feature_list.json'), 'feature_list.json'))) return false;
+      if (!(await checkFile(path.join(promptsDir, 'optimizer.md'), 'prompts/optimizer.md'))) return false;
+      break;
+
     default:
       logger.error(`Unknown phase: ${phase}`);
       return false;
