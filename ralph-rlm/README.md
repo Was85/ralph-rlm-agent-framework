@@ -4,7 +4,7 @@ An autonomous AI development framework that turns a requirements document into w
 
 You write a **PRD** (Product Requirements Document) describing what you want built. Ralph breaks it into features, validates coverage, and implements them one by one using AI coding agents (Claude Code or GitHub Copilot). When the AI fails, it sees that failure in the next iteration and tries a different approach. This continues until every feature passes.
 
-Based on [Geoffrey Huntley's Ralph Wiggum technique](https://ghuntley.com/ralph/). Enhanced with [RLM (Recursive Language Model)](https://arxiv.org/abs/2512.24601) exploration for large codebases.
+Based on [Geoffrey Huntley's Ralph Wiggum technique](https://ghuntley.com/ralph/). Enhanced with [RLM (Recursive Language Model)](https://arxiv.org/abs/2512.24601) exploration for large codebases. The optimize phase is inspired by [Andrej Karpathy's autoresearch](https://github.com/karpathy/autoresearch) — an AI agent refines the feature specifications before implementation, the same way autoresearch evolves training code through automated experimentation.
 
 > "The technique is deterministically bad in an undeterministic world. It's better to fail predictably than succeed unpredictably." — Geoffrey Huntley
 
@@ -15,6 +15,7 @@ Ralph is designed for building entire projects from a single requirements docume
 - **You describe the whole project** in a PRD — all requirements, edge cases, error handling
 - **Ralph decomposes it** into 50-200 small, atomic features (each completable in one AI session)
 - **Ralph validates** that every requirement maps to a feature (95%+ coverage required)
+- **Ralph optimizes** the feature list — an AI agent sharpens descriptions, splits vague features, and reorders dependencies so implementation succeeds more often
 - **Ralph implements** features in a loop — if a feature fails, the next iteration sees the error and tries differently
 - **Failures are data** — each failed attempt teaches the next iteration what NOT to do
 
@@ -54,12 +55,13 @@ ralph author                      # Interactive assistant helps you write prd.md
 # OR edit prd.md manually
 
 # Step 3: Let Ralph build it
-ralph auto                        # Runs all three phases automatically
+ralph auto                        # Runs init → validate → run
+ralph auto --optimize             # Runs init → validate → optimize → run
 ```
 
-## The Three Phases
+## The Four Phases
 
-Ralph works in three sequential phases. You can run them individually or all at once with `ralph auto`.
+Ralph works in four sequential phases. You can run them individually or all at once with `ralph auto`.
 
 ### Phase 1: Initialize (`ralph init`)
 
@@ -81,7 +83,35 @@ If gaps are found, the validator automatically adds missing features and updates
 
 The validation state is cached in `validation-state.json`. Running `ralph auto` will skip Phase 2 if validation is already `complete`. If you later change `prd.md`, delete `validation-state.json` to force re-validation.
 
-### Phase 3: Implement (`ralph run`)
+### Phase 3: Optimize (`ralph optimize`)
+
+Refines `feature_list.json` so every feature is small, detailed, and fully traceable to the PRD. An AI agent reads your PRD and the current feature list, then applies four types of mutations:
+
+- **SHARPEN** — rewrites vague acceptance criteria to be explicit and testable
+- **SPLIT** — breaks large features into 2-3 smaller, atomic ones
+- **REORDER** — fixes dependency ordering so blockers are resolved first
+- **COMPLETE** — adds features that exist in the PRD but were missed during init
+
+**Input:** `prd.md` + `feature_list.json`
+**Output:** Improved `feature_list.json`
+
+The optimizer never writes code — it only edits the specification. This is inspired by [Karpathy's autoresearch](https://github.com/karpathy/autoresearch): instead of improving the implementation, improve the instructions the implementer receives.
+
+To enable in `ralph auto`, add `--optimize`:
+
+```bash
+ralph auto --optimize              # Runs: init → validate → optimize → run
+```
+
+Or run standalone:
+
+```bash
+ralph optimize                     # Single-pass optimization, then stop
+```
+
+The optimizer prompt is customizable — `ralph scaffold` copies `optimizer.md` to `.ralph/prompts/` where you can tune the mutation strategy for your project.
+
+### Phase 4: Implement (`ralph run`)
 
 The core loop. For each pending feature:
 1. AI picks up the next feature
@@ -304,9 +334,39 @@ ralph validate -s 5                               # 5 second pause between itera
 
 ---
 
+### `ralph optimize`
+
+Phase 3. Runs an AI agent that refines `feature_list.json` — sharpening acceptance criteria, splitting vague features, fixing dependency order, and adding missing PRD coverage.
+
+**What it does step by step:**
+
+1. **Preflight checks** — verifies git repo, AI CLI, `feature_list.json`, and prompt files
+2. **Loads the optimizer prompt** — reads `.ralph/prompts/optimizer.md` (user-customizable), falling back to the framework default
+3. **Invokes the AI** — tells it to read `prd.md`, `feature_list.json`, and `claude-progress.txt`, then improve the feature list using four mutations: SHARPEN, SPLIT, REORDER, COMPLETE
+4. **Validates output** — checks `feature_list.json` is still valid JSON with the correct schema
+5. **Returns exit code** — `0` on success, `1` if `feature_list.json` is missing or output is invalid
+
+```bash
+ralph optimize                               # Single-pass optimization
+ralph optimize --runner copilot              # Use Copilot instead of Claude
+```
+
+**Requires:** `feature_list.json`, `prd.md`, git repo, AI CLI installed
+
+| Option | Short | Default | Description |
+|--------|-------|---------|-------------|
+| `--runner` | | `claude` | AI runner: `claude` or `copilot` |
+| `--dangerously-skip-permissions` | | `false` | Skip tool permission prompts |
+| `--allow-all-tools` | | `false` | Same as above |
+| `--verbose` | `-v` | `false` | Show context summary |
+| `--debug` | | `false` | Full debug tracing |
+| `--stream` | | `false` | Stream JSON output (Claude only) |
+
+---
+
 ### `ralph run`
 
-Phase 3. The implementation loop. Picks up features one by one, implements them, and checks results. Also supports parallel team mode.
+Phase 4. The implementation loop. Picks up features one by one, implements them, and checks results. Also supports parallel team mode. (Phase 3 when `--optimize` is not used.)
 
 **What it does step by step (sequential mode):**
 
@@ -386,7 +446,7 @@ ralph run --team --teammates 5 --skip-review      # 5 agents, no reviewer
 
 ### `ralph auto`
 
-Runs all three phases in sequence. Skips phases that are already complete — this makes it safe to re-run after interruptions or partial completions.
+Runs all phases in sequence. Skips phases that are already complete — this makes it safe to re-run after interruptions or partial completions.
 
 **What it does step by step:**
 
@@ -399,8 +459,9 @@ Runs all three phases in sequence. Skips phases that are already complete — th
      - If validation returns `blocked` (exit code 2) → stops with "Human review needed"
      - If validation returns `1` (incomplete but not blocked) → logs a warning but **continues to implementation anyway** (partial coverage is better than no implementation)
    - If **already validated** → skips validate, logs "Validation already complete, skipping validate phase"
-4. **Phase 3: Implement** — runs `ralph run` (the implementation loop). This is the main phase that builds your project.
-5. **Returns the exit code from Phase 3** — `0` if all features complete, `2` if blocked, `1` if max iterations reached
+4. **Phase 3: Optimize** (only with `--optimize`) — runs `ralph optimize` to sharpen feature descriptions before implementation. Skipped by default.
+5. **Phase 4: Implement** — runs `ralph run` (the implementation loop). This is the main phase that builds your project.
+6. **Returns the exit code from Phase 4** — `0` if all features complete, `2` if blocked, `1` if max iterations reached
 
 **Resumability:** Because each phase checks for existing files before running, you can:
 - Run `ralph auto`, let it run for a while, interrupt it (Ctrl+C)
@@ -408,6 +469,7 @@ Runs all three phases in sequence. Skips phases that are already complete — th
 
 ```bash
 ralph auto                                        # Run everything, defaults
+ralph auto --optimize                             # Include optimize phase before implementation
 ralph auto --runner copilot --allow-all-tools     # Copilot, fully autonomous
 ralph auto --dangerously-skip-permissions         # Claude, fully autonomous
 ralph auto -m 100 -c 80                           # 100 iterations, 80% coverage
@@ -417,7 +479,8 @@ ralph auto --debug                                # Full debug tracing
 | Option | Short | Default | Description |
 |--------|-------|---------|-------------|
 | `--runner` | | `claude` | AI runner: `claude` or `copilot` |
-| `--max-iterations` | `-m` | `50` | Max Phase 3 iterations |
+| `--optimize` | | `false` | Run optimize phase before implementation |
+| `--max-iterations` | `-m` | `50` | Max Phase 4 iterations |
 | `--max-validate-iterations` | | `10` | Max Phase 2 iterations |
 | `--coverage-threshold` | `-c` | `95` | Coverage % required |
 | `--sleep-between` | `-s` | `2` | Seconds between iterations |
@@ -429,7 +492,7 @@ ralph auto --debug                                # Full debug tracing
 
 **Returns:** `0` if all phases complete, `1` if max iterations reached, `2` if blocked (human help needed).
 
-**Note:** Team mode (`--team`, `--teammates`, `--skip-review`) is not supported with `ralph auto`. For parallel implementation, run phases individually: `ralph init` → `ralph validate` → `ralph run --team`.
+**Note:** Team mode (`--team`, `--teammates`, `--skip-review`) is not supported with `ralph auto`. For parallel implementation, run phases individually: `ralph init` → `ralph validate` → `ralph optimize` → `ralph run --team`.
 
 ---
 
