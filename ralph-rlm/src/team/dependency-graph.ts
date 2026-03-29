@@ -130,16 +130,31 @@ function splitByFileOverlap(features: Feature[]): string[][] {
  * - If no depends_on/related_files metadata: all features in level 0 (sequential)
  */
 export function buildExecutionPlan(features: Feature[]): ExecutionPlan {
-  // Filter to actionable features
-  const actionable = features.filter(
-    f => f.status === 'pending' || f.status === 'in_progress',
-  );
+  const featureMap = new Map(features.map(feature => [feature.id, feature]));
+
+  // Filter to actionable features whose dependencies are either complete or still actionable.
+  const actionable = features.filter((feature) => {
+    if (feature.status !== 'pending' && feature.status !== 'in_progress') {
+      return false;
+    }
+
+    return (feature.depends_on ?? []).every((dependencyId) => {
+      const dependency = featureMap.get(dependencyId);
+      if (!dependency) {
+        return false;
+      }
+
+      return dependency.status === 'complete'
+        || dependency.status === 'pending'
+        || dependency.status === 'in_progress';
+    });
+  });
 
   if (actionable.length === 0) {
     return { levels: [], hasCycles: false, cyclicFeatureIds: [] };
   }
 
-  const featureMap = new Map(actionable.map(f => [f.id, f]));
+  const actionableFeatureMap = new Map(actionable.map(f => [f.id, f]));
   const featureIds = new Set(actionable.map(f => f.id));
 
   // Build adjacency: feature → features it depends on (edges point to dependencies)
@@ -221,7 +236,7 @@ export function buildExecutionPlan(features: Feature[]): ExecutionPlan {
 
   for (const topoLevel of topoLevels) {
     const levelFeatures = topoLevel
-      .map(id => featureMap.get(id)!)
+      .map(id => actionableFeatureMap.get(id)!)
       .filter(Boolean);
 
     const subLevels = splitByFileOverlap(levelFeatures);

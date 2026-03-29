@@ -1,0 +1,30 @@
+{
+  "feature_id": "F006",
+  "outcome": "ready_for_review",
+  "summary": "Added store.update() method and PATCH /:id route. Two tests pass: update success and 404.",
+  "commit_sha": "007467c",
+  "changed_files": [
+    "src/store.ts",
+    "src/routes/todos.ts",
+    "tests/todos.test.ts"
+  ],
+  "commands_run": [
+    "npm run build",
+    "npm test"
+  ],
+  "verification_results": [
+    {
+      "command": "npm run build",
+      "status": "pass",
+      "details": "tsc compiled with no errors."
+    },
+    {
+      "command": "npm test",
+      "status": "pass",
+      "details": "All 13 tests passed (4 files)."
+    }
+  ],
+  "notes": [
+    "Used existing patterns from GET /:id for 404 handling."
+  ]
+}

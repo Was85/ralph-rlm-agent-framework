@@ -3,7 +3,6 @@
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 import path from 'node:path';
-import { existsSync } from 'node:fs';
 import { FEATURE_LIST_FILE } from './config/defaults.js';
 import type { FeatureStatus } from './config/types.js';
 import { buildConfig } from './config/build-config.js';
@@ -23,13 +22,11 @@ import { incrementFeatureAttempts } from './commands/skills/increment-feature-at
 import { claimFeature } from './commands/skills/claim-feature.js';
 import { TeamOrchestrator } from './team/team-orchestrator.js';
 import { fileURLToPath } from 'node:url';
+import { ensureProjectPrompts } from './core/project-prompts.js';
 
 function resolvePromptsDir(): string {
-  // Prefer local .ralph/prompts/ in the project (accessible to all runners)
-  const localPrompts = path.join(process.cwd(), '.ralph', 'prompts');
-  if (existsSync(localPrompts)) return localPrompts;
-  // Fall back to framework's prompts directory
-  return path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'prompts');
+  const packagedPrompts = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'prompts');
+  return ensureProjectPrompts(process.cwd(), packagedPrompts);
 }
 
 function resolveSkillsDir(): string {
@@ -42,7 +39,7 @@ const cli = yargs(hideBin(process.argv))
   .epilog(`Getting started:
   1. ralph scaffold       Set up project files + prd.md template
   2. ralph author         Interactive PRD writing assistant (or edit prd.md manually)
-  3. ralph auto           Run all phases: init -> validate -> implement
+  3. ralph auto           Run all phases: init -> validate -> [optimize] -> run
 
 Docs: https://www.npmjs.com/package/@alcinanet/ralph-rlm`)
   .option('runner', {
@@ -112,22 +109,22 @@ Docs: https://www.npmjs.com/package/@alcinanet/ralph-rlm`)
     const code = await runValidate(config, resolvePromptsDir(), runner);
     process.exitCode = code;
   })
-  .command('run', 'Phase 3: implement features', (y) => {
+  .command('run', 'Execute planner -> implementer -> verifier feature harnesses', (y) => {
     return y
       .option('team', {
         type: 'boolean',
         default: false,
-        describe: 'Enable team mode',
+        describe: 'Enable parallel worktree team mode',
       })
       .option('teammates', {
         type: 'number',
         default: 3,
-        describe: 'Number of parallel teammates',
+        describe: 'Number of parallel feature harnesses',
       })
       .option('skip-review', {
         type: 'boolean',
         default: false,
-        describe: 'Skip code review step',
+        describe: 'Skip final verifier approval after implementation',
       });
   }, async (argv) => {
     const config = buildConfig(argv);
@@ -140,7 +137,7 @@ Docs: https://www.npmjs.com/package/@alcinanet/ralph-rlm`)
       process.exitCode = await runImplement(config, resolvePromptsDir(), runner);
     }
   })
-  .command('auto', 'All phases sequentially', (y) => {
+  .command('auto', 'Run init -> validate -> [optimize] -> run', (y) => {
     return y
       .option('optimize', {
         type: 'boolean',

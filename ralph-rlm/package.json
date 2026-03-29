@@ -1,6 +1,6 @@
 {
   "name": "@alcinanet/ralph-rlm",
-  "version": "3.3.0",
+  "version": "4.0.0",
   "description": "Ralph-RLM Framework — AI-driven autonomous development orchestrator. Four-phase iterative coding: PRD -> features -> optimize -> implementation. Supports Claude Code and GitHub Copilot.",
   "type": "module",
   "main": "./dist/cli.js",
@@ -18,6 +18,9 @@
   "scripts": {
     "build": "tsc",
     "prepublishOnly": "node -e \"require('fs').copyFileSync('../README.md','README.md')\" && npm test && npm run build",
+    "smoke:todo": "node ./scripts/smoke-todo.mjs --mode all",
+    "smoke:todo:sequential": "node ./scripts/smoke-todo.mjs --mode sequential",
+    "smoke:todo:team": "node ./scripts/smoke-todo.mjs --mode team",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",

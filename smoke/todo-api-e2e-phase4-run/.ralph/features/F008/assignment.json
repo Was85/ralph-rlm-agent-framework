@@ -1,0 +1,31 @@
+{
+  "feature_id": "F008",
+  "description": "Add input validation returning 400 for missing/blank title on POST and invalid payloads on PATCH",
+  "acceptance_criteria": [
+    "POST /todos with missing title returns 400 with JSON error",
+    "POST /todos with blank title returns 400 with JSON error",
+    "PATCH /todos/:id with empty title returns 400 with JSON error",
+    "PATCH /todos/:id with wrong data types returns 400 with JSON error",
+    "All error responses are JSON with descriptive messages",
+    "Unit test: validation.test.ts > 'POST /todos rejects missing title' verifies validation",
+    "Unit test: validation.test.ts > 'PATCH /todos/:id rejects invalid payload' verifies validation",
+    "Build passes (npm run build)",
+    "Tests pass (npm test)"
+  ],
+  "verification_steps": [
+    "npm run build",
+    "npm test"
+  ],
+  "attempts": 1,
+  "priority": 8,
+  "last_error": "Implementer did not write a valid implementation-report.json artifact",
+  "source_requirement": "## Functional Requirements > ### 7. Validation and error handling",
+  "depends_on": [
+    "F004",
+    "F006"
+  ],
+  "related_files": [
+    "src/routes/todos.ts",
+    "tests/validation.test.ts"
+  ]
+}

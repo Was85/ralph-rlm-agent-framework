@@ -2,6 +2,7 @@ import { access } from 'node:fs/promises';
 import * as store from '../../core/feature-store.js';
 import { recalculateStats } from '../../core/stats.js';
 import type { Feature, AllClaimedResult, SkillResult } from '../../config/types.js';
+import { isFeatureReady } from '../../core/scheduler.js';
 
 export async function claimFeature(
   filePath: string,
@@ -25,9 +26,15 @@ export async function claimFeature(
         return;
       }
 
-      // 2. Find first pending feature not claimed by anyone
-      const pending = store.findByStatus(data, 'pending');
-      const nextPending = pending.find(f => !f.claimed_by || f.claimed_by === '');
+      const featureMap = new Map(data.features.map(feature => [feature.id, feature]));
+      const nextPending = data.features
+        .filter(feature => feature.status === 'pending' && (!feature.claimed_by || feature.claimed_by === ''))
+        .filter(feature => isFeatureReady(feature, featureMap))
+        .sort((a, b) => {
+          const byPriority = (a.priority ?? Number.MAX_SAFE_INTEGER) - (b.priority ?? Number.MAX_SAFE_INTEGER);
+          if (byPriority !== 0) return byPriority;
+          return a.id.localeCompare(b.id);
+        })[0];
 
       if (!nextPending) {
         result = { result: 'ALL_CLAIMED' };

@@ -1,29 +1,123 @@
-import { mkdtemp, rm, mkdir, writeFile, readFile, access } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { runImplement } from '../../../src/commands/run.js';
-import type { RalphConfig, Runner, RunnerConfig, FeatureList } from '../../../src/config/types.js';
-import { DEFAULT_CONFIG, PROGRESS_FILE } from '../../../src/config/defaults.js';
+import type { RalphConfig, Runner, FeatureList } from '../../../src/config/types.js';
+import { DEFAULT_CONFIG, PROGRESS_FILE, RALPH_DIR, RALPH_FEATURES_DIR } from '../../../src/config/defaults.js';
 import { createFeatureList } from '../../fixtures/feature-list-factory.js';
+import type { FeatureHarnessResult } from '../../../src/core/harness-runner.js';
+import type { MergeResult, Worktree, WorktreeManager } from '../../../src/team/worktree-manager.js';
+import { recalculateStats } from '../../../src/core/stats.js';
 
-// Mock runPreflight so tests don't require the actual CLI binary on the system.
-// ESM internal calls aren't affected by export mocks, so we mock runPreflight directly.
-import { runPreflight } from '../../../src/core/preflight.js';
+const harnessState = vi.hoisted(() => ({
+  queue: [] as FeatureHarnessResult[],
+  invocations: [] as Array<{ cwd: string; featureId: string }>,
+  onInvoke: undefined as
+    | undefined
+    | ((options: { cwd: string; feature: { id: string } }) => Promise<void>),
+}));
+
+const execState = vi.hoisted(() => ({
+  commands: [] as string[],
+  failCommands: new Set<string>(),
+  gitCalls: [] as Array<{ args: string[]; cwd: string }>,
+  changedFilesByCommit: new Map<string, string[]>(),
+}));
+
 vi.mock('../../../src/core/preflight.js', () => ({
   runPreflight: vi.fn().mockResolvedValue(true),
 }));
+
+vi.mock('../../../src/core/harness-runner.js', () => ({
+  runFeatureHarness: vi.fn(async (options: { cwd: string; feature: { id: string } }) => {
+    harnessState.invocations.push({ cwd: options.cwd, featureId: options.feature.id });
+    if (harnessState.onInvoke) {
+      await harnessState.onInvoke(options);
+    }
+    return harnessState.queue.shift() ?? { outcome: 'approved', summary: 'approved' };
+  }),
+}));
+
+vi.mock('../../../src/core/safe-exec.js', () => ({
+  gitExec: vi.fn(async (args: string[], cwd: string) => {
+    execState.gitCalls.push({ args: [...args], cwd });
+    if (args[0] === 'status' && args[1] === '--porcelain') {
+      return { stdout: '', stderr: '' };
+    }
+    if (args[0] === 'show' && args[1] === '--pretty=format:') {
+      const commit = args.at(-1) ?? '';
+      return { stdout: (execState.changedFilesByCommit.get(commit) ?? []).join('\n'), stderr: '' };
+    }
+    if (args[0] === 'rev-parse') {
+      return { stdout: 'mock-commit\n', stderr: '' };
+    }
+    return { stdout: '', stderr: '' };
+  }),
+  safeExecCommand: vi.fn(async (command: string) => {
+    execState.commands.push(command);
+    if (execState.failCommands.has(command)) {
+      throw new Error(`command failed: ${command}`);
+    }
+    return { stdout: '', stderr: '' };
+  }),
+  sanitizeCommitMessage: vi.fn((message: string) => message),
+}));
+
+class MockWorktreeManager implements WorktreeManager {
+  created: string[] = [];
+  cleaned: string[] = [];
+  cleanupAllCalled = false;
+  merged: string[] = [];
+  reverted: Array<{ cwd: string; mergeCommit: string }> = [];
+  mergeResults = new Map<string, MergeResult>();
+
+  async create(featureId: string, cwd: string): Promise<Worktree> {
+    this.created.push(featureId);
+    const worktreePath = path.join(cwd, '.claude', 'worktrees', `ralph-${featureId}`);
+    await mkdir(worktreePath, { recursive: true });
+    return {
+      name: `ralph-${featureId}`,
+      path: worktreePath,
+      branch: `ralph/${featureId}`,
+      featureId,
+    };
+  }
+
+  async merge(worktree: Worktree, cwd: string): Promise<MergeResult> {
+    this.merged.push(worktree.featureId);
+    const sourceDir = path.join(worktree.path, RALPH_DIR, RALPH_FEATURES_DIR, worktree.featureId);
+    const targetDir = path.join(cwd, RALPH_DIR, RALPH_FEATURES_DIR, worktree.featureId);
+    if (existsSync(sourceDir)) {
+      await mkdir(path.dirname(targetDir), { recursive: true });
+      await cp(sourceDir, targetDir, { recursive: true, force: true });
+    }
+
+    return this.mergeResults.get(worktree.featureId)
+      ?? { success: true, conflicted: false, mergeCommit: `merge-${worktree.featureId}` };
+  }
+
+  async cleanup(worktree: Worktree): Promise<void> {
+    this.cleaned.push(worktree.featureId);
+  }
+
+  async cleanupAll(): Promise<void> {
+    this.cleanupAllCalled = true;
+  }
+
+  async revertLastMerge(cwd: string, mergeCommit: string): Promise<void> {
+    this.reverted.push({ cwd, mergeCommit });
+  }
+}
 
 function makeConfig(overrides: Partial<RalphConfig> = {}): RalphConfig {
   return { ...DEFAULT_CONFIG, sleepBetween: 0, ...overrides };
 }
 
-function createMockRunner(onInvoke?: (prompt: string, iteration: number) => Promise<void>): Runner {
-  let callCount = 0;
+function createRunner(): Runner {
   return {
     type: 'claude',
-    async invoke(prompt: string, _config: RunnerConfig): Promise<number> {
-      callCount++;
-      if (onInvoke) await onInvoke(prompt, callCount);
+    async invoke(): Promise<number> {
       return 0;
     },
     async checkInstalled(): Promise<boolean> {
@@ -32,33 +126,32 @@ function createMockRunner(onInvoke?: (prompt: string, iteration: number) => Prom
   };
 }
 
-async function setupRunEnv(tmpDir: string, promptsDir: string, featureList: FeatureList): Promise<void> {
+async function setupRunEnv(tmpDir: string, featureList: FeatureList): Promise<void> {
   await mkdir(path.join(tmpDir, '.git'));
   await writeFile(path.join(tmpDir, 'feature_list.json'), JSON.stringify(featureList, null, 2), 'utf-8');
-  await writeFile(path.join(promptsDir, 'implementer.md'), 'Implement the next feature', 'utf-8');
 }
 
-/**
- * Helper: simulate what an agent does — find the in_progress feature (set by the framework)
- * and mark it complete. The framework now picks the feature and sets it to in_progress
- * before invoking the runner.
- */
-async function simulateAgentComplete(tmpDir: string): Promise<void> {
+async function readFeatureList(tmpDir: string): Promise<FeatureList> {
   const raw = await readFile(path.join(tmpDir, 'feature_list.json'), 'utf-8');
-  const fl = JSON.parse(raw) as FeatureList;
-  const target = fl.features.find(f => f.status === 'in_progress');
-  if (target) target.status = 'complete';
-  await writeFile(path.join(tmpDir, 'feature_list.json'), JSON.stringify(fl, null, 2), 'utf-8');
+  return JSON.parse(raw) as FeatureList;
 }
 
 describe('run command', () => {
   let tmpDir: string;
-  let promptsDir: string;
+  let runner: Runner;
+  let worktreeManager: MockWorktreeManager;
 
   beforeEach(async () => {
     tmpDir = await mkdtemp(path.join(tmpdir(), 'run-cmd-'));
-    promptsDir = path.join(tmpDir, 'prompts');
-    await mkdir(promptsDir, { recursive: true });
+    runner = createRunner();
+    worktreeManager = new MockWorktreeManager();
+    harnessState.queue = [];
+    harnessState.invocations = [];
+    harnessState.onInvoke = undefined;
+    execState.commands = [];
+    execState.failCommands.clear();
+    execState.gitCalls = [];
+    execState.changedFilesByCommit.clear();
   });
 
   afterEach(async () => {
@@ -66,378 +159,197 @@ describe('run command', () => {
   });
 
   it('returns 0 when all features are already complete', async () => {
-    const data = createFeatureList({ pending: 0, complete: 3 });
-    await setupRunEnv(tmpDir, promptsDir, data);
-    const runner = createMockRunner();
+    await setupRunEnv(tmpDir, createFeatureList({ pending: 0, complete: 3 }));
 
-    const result = await runImplement(makeConfig(), promptsDir, runner, tmpDir);
+    const result = await runImplement(makeConfig(), tmpDir, runner, tmpDir, worktreeManager);
 
     expect(result).toBe(0);
+    expect(harnessState.invocations).toHaveLength(0);
+    expect(worktreeManager.cleanupAllCalled).toBe(true);
   });
 
   it('returns 2 when all remaining features are blocked', async () => {
-    const data = createFeatureList({ pending: 0, complete: 1, blocked: 2 });
-    await setupRunEnv(tmpDir, promptsDir, data);
-    const runner = createMockRunner();
+    await setupRunEnv(tmpDir, createFeatureList({ pending: 0, complete: 1, blocked: 2 }));
 
-    const result = await runImplement(makeConfig(), promptsDir, runner, tmpDir);
+    const result = await runImplement(makeConfig(), tmpDir, runner, tmpDir, worktreeManager);
 
     expect(result).toBe(2);
+    expect(harnessState.invocations).toHaveLength(0);
   });
 
-  it('invokes runner and completes when features become complete', async () => {
-    const data = createFeatureList({ pending: 1, complete: 2 });
-    await setupRunEnv(tmpDir, promptsDir, data);
+  it('returns 2 when pending work is deadlocked behind blocked dependencies', async () => {
+    const data = createFeatureList({ pending: 1, blocked: 1 });
+    data.features[0]!.status = 'blocked';
+    data.features[0]!.attempts = 5;
+    data.features[0]!.last_error = 'Blocked upstream';
+    data.features[1]!.status = 'pending';
+    data.features[1]!.depends_on = ['F001'];
+    recalculateStats(data);
+    await setupRunEnv(tmpDir, data);
 
-    // The framework sets the pending feature to in_progress before invoking runner
-    const runner = createMockRunner(async () => {
-      await simulateAgentComplete(tmpDir);
-    });
-
-    const result = await runImplement(makeConfig({ maxIterations: 5 }), promptsDir, runner, tmpDir);
-
-    expect(result).toBe(0);
-  });
-
-  it('returns 1 when max iterations reached', async () => {
-    const data = createFeatureList({ pending: 3 });
-    await setupRunEnv(tmpDir, promptsDir, data);
-    const runner = createMockRunner(); // agent does nothing — feature stays in_progress
-
-    const result = await runImplement(makeConfig({ maxIterations: 2 }), promptsDir, runner, tmpDir);
-
-    expect(result).toBe(1);
-  });
-
-  it('returns 2 when remaining features become blocked during loop', async () => {
-    const data = createFeatureList({ pending: 1 });
-    await setupRunEnv(tmpDir, promptsDir, data);
-
-    const runner = createMockRunner(async () => {
-      const raw = await readFile(path.join(tmpDir, 'feature_list.json'), 'utf-8');
-      const fl = JSON.parse(raw) as FeatureList;
-      for (const f of fl.features) {
-        if (f.status === 'in_progress') {
-          f.status = 'blocked';
-          f.last_error = 'Build failed';
-        }
-      }
-      await writeFile(path.join(tmpDir, 'feature_list.json'), JSON.stringify(fl, null, 2), 'utf-8');
-    });
-
-    const result = await runImplement(makeConfig({ maxIterations: 5 }), promptsDir, runner, tmpDir);
+    const result = await runImplement(makeConfig({ maxIterations: 5 }), tmpDir, runner, tmpDir, worktreeManager);
 
     expect(result).toBe(2);
+    expect(harnessState.invocations).toHaveLength(0);
+    const runtimeSession = JSON.parse(await readFile(path.join(tmpDir, '.ralph', 'runtime', 'session-state.json'), 'utf-8'));
+    expect(runtimeSession.status).toBe('blocked');
+    expect(runtimeSession.last_summary).toContain('No ready features remain.');
   });
 
-  it('returns 1 if preflight fails', async () => {
-    vi.mocked(runPreflight).mockResolvedValueOnce(false);
-    const data = createFeatureList({ pending: 1 });
-    await writeFile(path.join(tmpDir, 'feature_list.json'), JSON.stringify(data, null, 2), 'utf-8');
-    await writeFile(path.join(promptsDir, 'implementer.md'), 'Implement', 'utf-8');
-    const runner = createMockRunner();
-
-    const result = await runImplement(makeConfig(), promptsDir, runner, tmpDir);
-
-    expect(result).toBe(1);
-  });
-
-  it('passes a feature-specific prompt with the assigned feature ID', async () => {
-    let capturedPrompt = '';
-    const data = createFeatureList({ pending: 1, complete: 2 });
-    await setupRunEnv(tmpDir, promptsDir, data);
-
-    const runner = createMockRunner(async (prompt) => {
-      capturedPrompt = prompt;
-      await simulateAgentComplete(tmpDir);
-    });
-
-    await runImplement(makeConfig({ maxIterations: 5 }), promptsDir, runner, tmpDir);
-
-    // Must reference file path
-    expect(capturedPrompt).toContain('implementer.md');
-    // Must contain the assigned feature ID
-    expect(capturedPrompt).toContain('F003');
-    // Must enforce git commit in the prompt
-    expect(capturedPrompt).toContain('git commit');
-    // Must tell agent to implement ONLY this feature
-    expect(capturedPrompt).toContain('ONLY');
-    // Must be short enough for Windows cmd.exe (8191 char limit)
-    expect(capturedPrompt.length).toBeLessThan(8000);
-    // Must not contain newlines — cmd.exe truncates at line breaks
-    expect(capturedPrompt).not.toContain('\n');
-  });
-
-  it('recalculates stats after each iteration', async () => {
+  it('keeps the full backlog visible in worktrees while processing features sequentially', async () => {
     const data = createFeatureList({ pending: 2 });
-    await setupRunEnv(tmpDir, promptsDir, data);
-    let iterCount = 0;
+    await setupRunEnv(tmpDir, data);
+    const actionableCounts: number[] = [];
 
-    const runner = createMockRunner(async () => {
-      iterCount++;
-      const raw = await readFile(path.join(tmpDir, 'feature_list.json'), 'utf-8');
-      const fl = JSON.parse(raw) as FeatureList;
-      if (iterCount === 1) {
-        // Complete the in_progress feature on first iteration
-        const target = fl.features.find(f => f.status === 'in_progress');
-        if (target) target.status = 'complete';
-        // Corrupt stats to verify recalculation
-        fl.stats.complete = 99;
-      } else {
-        // Complete the in_progress feature on second iteration
-        const target = fl.features.find(f => f.status === 'in_progress');
-        if (target) target.status = 'complete';
-      }
-      await writeFile(path.join(tmpDir, 'feature_list.json'), JSON.stringify(fl, null, 2), 'utf-8');
-    });
+    harnessState.queue = [
+      { outcome: 'approved', summary: 'F001 approved' },
+      { outcome: 'approved', summary: 'F002 approved' },
+    ];
+    harnessState.onInvoke = async ({ cwd, feature }) => {
+      const raw = await readFile(path.join(cwd, 'feature_list.json'), 'utf-8');
+      const featureList = JSON.parse(raw) as FeatureList;
+      actionableCounts.push(featureList.features.filter(f => f.status === 'pending' || f.status === 'in_progress').length);
+      const featureDir = path.join(cwd, RALPH_DIR, RALPH_FEATURES_DIR, feature.id);
+      await mkdir(featureDir, { recursive: true });
+      await writeFile(path.join(featureDir, 'implementation-report.json'), '{}', 'utf-8');
+    };
 
-    const result = await runImplement(makeConfig({ maxIterations: 5 }), promptsDir, runner, tmpDir);
+    const result = await runImplement(makeConfig({ maxIterations: 5 }), tmpDir, runner, tmpDir, worktreeManager);
 
     expect(result).toBe(0);
-    // Verify stats were recalculated (not corrupted 99)
-    const finalRaw = await readFile(path.join(tmpDir, 'feature_list.json'), 'utf-8');
-    const final = JSON.parse(finalRaw) as FeatureList;
+    expect(harnessState.invocations.map(invocation => invocation.featureId)).toEqual(['F001', 'F002']);
+    expect(actionableCounts).toEqual([2, 1]);
+    const final = await readFeatureList(tmpDir);
     expect(final.stats.complete).toBe(2);
     expect(final.stats.pending).toBe(0);
+    const runtimeSession = JSON.parse(await readFile(path.join(tmpDir, '.ralph', 'runtime', 'session-state.json'), 'utf-8'));
+    expect(runtimeSession.status).toBe('completed');
+    expect(runtimeSession.last_completed_feature_id).toBe('F002');
+    const featureRuntime = JSON.parse(await readFile(path.join(tmpDir, '.ralph', 'runtime', 'features', 'F001.json'), 'utf-8'));
+    expect(featureRuntime.status).toBe('completed');
   });
 
-  it('processes one feature at a time across iterations', async () => {
+  it('copies harness artifacts back and increments attempts on retry outcomes', async () => {
+    await setupRunEnv(tmpDir, createFeatureList({ pending: 1 }));
+
+    harnessState.queue = [{ outcome: 'retry', summary: 'needs smaller contract' }];
+    harnessState.onInvoke = async ({ cwd, feature }) => {
+      const featureDir = path.join(cwd, RALPH_DIR, RALPH_FEATURES_DIR, feature.id);
+      await mkdir(featureDir, { recursive: true });
+      await writeFile(path.join(featureDir, 'contract.json'), '{"feature_id":"F001"}', 'utf-8');
+    };
+
+    const result = await runImplement(makeConfig({ maxIterations: 1 }), tmpDir, runner, tmpDir, worktreeManager);
+
+    expect(result).toBe(1);
+    const final = await readFeatureList(tmpDir);
+    expect(final.features[0]?.status).toBe('in_progress');
+    expect(final.features[0]?.attempts).toBe(1);
+    expect(final.features[0]?.last_error).toContain('needs smaller contract');
+    expect(existsSync(path.join(tmpDir, RALPH_DIR, RALPH_FEATURES_DIR, 'F001', 'contract.json'))).toBe(true);
+    const featureRuntime = JSON.parse(await readFile(path.join(tmpDir, '.ralph', 'runtime', 'features', 'F001.json'), 'utf-8'));
+    expect(featureRuntime.status).toBe('retry');
+    expect(featureRuntime.last_error).toContain('needs smaller contract');
+  });
+
+  it('marks features blocked when the harness blocks them', async () => {
+    await setupRunEnv(tmpDir, createFeatureList({ pending: 1 }));
+    harnessState.queue = [{ outcome: 'blocked', summary: 'missing external dependency' }];
+
+    const result = await runImplement(makeConfig({ maxIterations: 3 }), tmpDir, runner, tmpDir, worktreeManager);
+
+    expect(result).toBe(2);
+    const final = await readFeatureList(tmpDir);
+    expect(final.features[0]?.status).toBe('blocked');
+    expect(final.features[0]?.attempts).toBe(1);
+    expect(final.features[0]?.last_error).toContain('missing external dependency');
+  });
+
+  it('reverts merged work when verification fails', async () => {
+    await setupRunEnv(
+      tmpDir,
+      createFeatureList({
+        pending: 1,
+        config: { test_command: 'npm test', max_attempts_per_feature: 1 },
+      }),
+    );
+    harnessState.queue = [{ outcome: 'approved', summary: 'ready' }];
+    execState.failCommands.add('npm test');
+    harnessState.onInvoke = async ({ cwd, feature }) => {
+      const featureDir = path.join(cwd, RALPH_DIR, RALPH_FEATURES_DIR, feature.id);
+      await mkdir(featureDir, { recursive: true });
+      await writeFile(path.join(featureDir, 'verification-report.json'), '{}', 'utf-8');
+    };
+
+    const result = await runImplement(makeConfig({ maxIterations: 2 }), tmpDir, runner, tmpDir, worktreeManager);
+
+    expect(result).toBe(2);
+    expect(worktreeManager.reverted).toEqual([{ cwd: tmpDir, mergeCommit: 'merge-F001' }]);
+    const final = await readFeatureList(tmpDir);
+    expect(final.features[0]?.status).toBe('blocked');
+    expect(final.features[0]?.last_error).toContain('Verification failed: npm test');
+    const progress = await readFile(path.join(tmpDir, PROGRESS_FILE), 'utf-8');
+    expect(progress).toContain('VERIFICATION FAILED for F001');
+    expect(existsSync(path.join(tmpDir, RALPH_DIR, RALPH_FEATURES_DIR, 'F001', 'verification-report.json'))).toBe(true);
+    expect(existsSync(path.join(tmpDir, RALPH_DIR, RALPH_FEATURES_DIR, 'F001', 'post-merge-verification.json'))).toBe(true);
+  });
+
+  it('installs npm dependencies before verification when merged manifests changed', async () => {
+    await setupRunEnv(
+      tmpDir,
+      createFeatureList({
+        pending: 1,
+        config: { build_command: 'npm run build', test_command: 'npm test' },
+      }),
+    );
+    await writeFile(path.join(tmpDir, 'package.json'), '{"name":"verify-test"}', 'utf-8');
+    await writeFile(path.join(tmpDir, 'package-lock.json'), '{"name":"verify-test","lockfileVersion":3}', 'utf-8');
+    execState.changedFilesByCommit.set('merge-F001', ['package.json', 'package-lock.json']);
+    harnessState.queue = [{ outcome: 'approved', summary: 'ready' }];
+
+    const result = await runImplement(makeConfig({ maxIterations: 2 }), tmpDir, runner, tmpDir, worktreeManager);
+
+    expect(result).toBe(0);
+    expect(execState.commands.slice(0, 3)).toEqual(['npm ci', 'npm run build', 'npm test']);
+  });
+
+  it('respects dependency ordering across iterations', async () => {
+    await setupRunEnv(
+      tmpDir,
+      createFeatureList({
+        pending: 2,
+        dependencies: [
+          { featureId: 'F001', dependsOn: [] },
+          { featureId: 'F002', dependsOn: ['F001'] },
+        ],
+      }),
+    );
+    harnessState.queue = [
+      { outcome: 'approved', summary: 'F001 approved' },
+      { outcome: 'approved', summary: 'F002 approved' },
+    ];
+
+    const result = await runImplement(makeConfig({ maxIterations: 5 }), tmpDir, runner, tmpDir, worktreeManager);
+
+    expect(result).toBe(0);
+    expect(harnessState.invocations.map(invocation => invocation.featureId)).toEqual(['F001', 'F002']);
+  });
+
+  it('selects higher priority ready features first', async () => {
     const data = createFeatureList({ pending: 3 });
-    await setupRunEnv(tmpDir, promptsDir, data);
-    const completedPerIteration: string[] = [];
+    data.features.find(feature => feature.id === 'F001')!.priority = 9;
+    data.features.find(feature => feature.id === 'F002')!.priority = 2;
+    data.features.find(feature => feature.id === 'F003')!.priority = 1;
+    await setupRunEnv(tmpDir, data);
+    harnessState.queue = [
+      { outcome: 'approved', summary: 'F003 approved' },
+      { outcome: 'approved', summary: 'F002 approved' },
+      { outcome: 'approved', summary: 'F001 approved' },
+    ];
 
-    const runner = createMockRunner(async () => {
-      const raw = await readFile(path.join(tmpDir, 'feature_list.json'), 'utf-8');
-      const fl = JSON.parse(raw) as FeatureList;
-      // The framework already set one feature to in_progress — complete it
-      const target = fl.features.find(f => f.status === 'in_progress');
-      if (target) {
-        target.status = 'complete';
-        completedPerIteration.push(target.id);
-      }
-      await writeFile(path.join(tmpDir, 'feature_list.json'), JSON.stringify(fl, null, 2), 'utf-8');
-    });
-
-    const result = await runImplement(makeConfig({ maxIterations: 5 }), promptsDir, runner, tmpDir);
+    const result = await runImplement(makeConfig({ maxIterations: 5 }), tmpDir, runner, tmpDir, worktreeManager);
 
     expect(result).toBe(0);
-    // Should have taken exactly 3 iterations (one feature per iteration)
-    expect(completedPerIteration).toHaveLength(3);
-    // Each feature should have been completed in order
-    expect(completedPerIteration).toEqual(['F001', 'F002', 'F003']);
-  });
-
-  it('framework sets feature to in_progress before invoking runner', async () => {
-    const data = createFeatureList({ pending: 2 });
-    await setupRunEnv(tmpDir, promptsDir, data);
-    const featureStatusDuringInvoke: string[] = [];
-
-    const runner = createMockRunner(async () => {
-      const raw = await readFile(path.join(tmpDir, 'feature_list.json'), 'utf-8');
-      const fl = JSON.parse(raw) as FeatureList;
-      // Check that exactly one feature is in_progress (set by framework)
-      const inProgress = fl.features.filter(f => f.status === 'in_progress');
-      featureStatusDuringInvoke.push(
-        ...inProgress.map(f => `${f.id}:in_progress`),
-      );
-      // Complete the feature
-      for (const f of inProgress) {
-        f.status = 'complete';
-      }
-      await writeFile(path.join(tmpDir, 'feature_list.json'), JSON.stringify(fl, null, 2), 'utf-8');
-    });
-
-    await runImplement(makeConfig({ maxIterations: 5 }), promptsDir, runner, tmpDir);
-
-    // Each iteration should have had exactly one feature in_progress
-    expect(featureStatusDuringInvoke).toEqual([
-      'F001:in_progress',
-      'F002:in_progress',
-    ]);
-  });
-
-  it('skips verification when no build/test commands configured', async () => {
-    // No build_command or test_command in config
-    const data = createFeatureList({ pending: 1 });
-    await setupRunEnv(tmpDir, promptsDir, data);
-
-    const runner = createMockRunner(async () => {
-      await simulateAgentComplete(tmpDir);
-    });
-
-    const result = await runImplement(makeConfig({ maxIterations: 5 }), promptsDir, runner, tmpDir);
-
-    expect(result).toBe(0);
-    // Feature should remain complete (no revert since no verification commands)
-    const finalRaw = await readFile(path.join(tmpDir, 'feature_list.json'), 'utf-8');
-    const final = JSON.parse(finalRaw) as FeatureList;
-    expect(final.features[0]?.status).toBe('complete');
-  });
-
-  it('reverts feature to in_progress when verification fails', async () => {
-    // Configure a test command that will fail
-    const data = createFeatureList({
-      pending: 1,
-      config: { test_command: 'exit 1' },
-    });
-    await setupRunEnv(tmpDir, promptsDir, data);
-    let iterCount = 0;
-
-    const runner = createMockRunner(async () => {
-      iterCount++;
-      if (iterCount === 1) {
-        // First iteration: complete the feature
-        await simulateAgentComplete(tmpDir);
-      }
-      // On subsequent iterations, feature is in_progress (reverted by verification)
-      // Don't change it — let the loop hit max iterations
-    });
-
-    const result = await runImplement(makeConfig({ maxIterations: 2 }), promptsDir, runner, tmpDir);
-
-    // Should return 1 (max iterations) because verification keeps failing
-    expect(result).toBe(1);
-
-    // Feature should have been reverted to in_progress with incremented attempts
-    const finalRaw = await readFile(path.join(tmpDir, 'feature_list.json'), 'utf-8');
-    const final = JSON.parse(finalRaw) as FeatureList;
-    const feature = final.features[0];
-    expect(feature?.status).toBe('in_progress');
-    expect(feature?.attempts).toBeGreaterThan(0);
-    expect(feature?.last_error).toContain('Verification failed');
-  });
-
-  it('logs verification results to progress file', async () => {
-    // Configure a test command that succeeds
-    const data = createFeatureList({
-      pending: 1,
-      config: { test_command: 'echo ok' },
-    });
-    await setupRunEnv(tmpDir, promptsDir, data);
-
-    const runner = createMockRunner(async () => {
-      await simulateAgentComplete(tmpDir);
-    });
-
-    await runImplement(makeConfig({ maxIterations: 5 }), promptsDir, runner, tmpDir);
-
-    // Progress file should exist and contain verification entry
-    const progressPath = path.join(tmpDir, PROGRESS_FILE);
-    await expect(access(progressPath)).resolves.toBeUndefined();
-    const progress = await readFile(progressPath, 'utf-8');
-    expect(progress).toContain('VERIFIED');
-    expect(progress).toContain('F001');
-  });
-
-  it('logs verification failure to progress file', async () => {
-    const data = createFeatureList({
-      pending: 1,
-      config: { test_command: 'exit 1' },
-    });
-    await setupRunEnv(tmpDir, promptsDir, data);
-
-    const runner = createMockRunner(async (_prompt, iter) => {
-      if (iter === 1) {
-        await simulateAgentComplete(tmpDir);
-      }
-    });
-
-    await runImplement(makeConfig({ maxIterations: 2 }), promptsDir, runner, tmpDir);
-
-    const progressPath = path.join(tmpDir, PROGRESS_FILE);
-    const progress = await readFile(progressPath, 'utf-8');
-    expect(progress).toContain('VERIFICATION FAILED');
-    expect(progress).toContain('F001');
-  });
-
-  it('updates feature_list.json and progress.txt during the loop', async () => {
-    const data = createFeatureList({
-      pending: 2,
-      config: { test_command: 'echo ok' },
-    });
-    await setupRunEnv(tmpDir, promptsDir, data);
-
-    const runner = createMockRunner(async () => {
-      await simulateAgentComplete(tmpDir);
-    });
-
-    const result = await runImplement(makeConfig({ maxIterations: 5 }), promptsDir, runner, tmpDir);
-
-    expect(result).toBe(0);
-
-    // Feature list should show all complete
-    const finalRaw = await readFile(path.join(tmpDir, 'feature_list.json'), 'utf-8');
-    const final = JSON.parse(finalRaw) as FeatureList;
-    expect(final.stats.complete).toBe(2);
-    expect(final.stats.pending).toBe(0);
-
-    // Progress file should have entries for both features
-    const progressPath = path.join(tmpDir, PROGRESS_FILE);
-    const progress = await readFile(progressPath, 'utf-8');
-    expect(progress).toContain('F001');
-    expect(progress).toContain('F002');
-    expect(progress).toContain('VERIFIED');
-  });
-
-  it('increments attempts when agent does not complete the feature', async () => {
-    const data = createFeatureList({ pending: 1 });
-    await setupRunEnv(tmpDir, promptsDir, data);
-
-    // Agent does nothing — feature stays in_progress
-    const runner = createMockRunner();
-
-    await runImplement(makeConfig({ maxIterations: 3 }), promptsDir, runner, tmpDir);
-
-    const finalRaw = await readFile(path.join(tmpDir, 'feature_list.json'), 'utf-8');
-    const final = JSON.parse(finalRaw) as FeatureList;
-    const feature = final.features[0];
-    // Framework should have incremented attempts each iteration
-    expect(feature?.attempts).toBe(3);
-    expect(feature?.status).toBe('in_progress');
-  });
-
-  it('marks feature as blocked after max attempts', async () => {
-    const data = createFeatureList({
-      pending: 1,
-      config: { max_attempts_per_feature: 2 },
-    });
-    await setupRunEnv(tmpDir, promptsDir, data);
-
-    // Agent does nothing — feature stays in_progress
-    const runner = createMockRunner();
-
-    const result = await runImplement(makeConfig({ maxIterations: 5 }), promptsDir, runner, tmpDir);
-
-    expect(result).toBe(2); // blocked
-
-    const finalRaw = await readFile(path.join(tmpDir, 'feature_list.json'), 'utf-8');
-    const final = JSON.parse(finalRaw) as FeatureList;
-    const feature = final.features[0];
-    expect(feature?.status).toBe('blocked');
-    expect(feature?.attempts).toBe(2);
-  });
-
-  it('marks feature as blocked when verification fails and max attempts reached', async () => {
-    const data = createFeatureList({
-      pending: 1,
-      config: { test_command: 'exit 1', max_attempts_per_feature: 2 },
-    });
-    await setupRunEnv(tmpDir, promptsDir, data);
-
-    const runner = createMockRunner(async () => {
-      // Agent always marks it complete, but verification will fail
-      await simulateAgentComplete(tmpDir);
-    });
-
-    const result = await runImplement(makeConfig({ maxIterations: 5 }), promptsDir, runner, tmpDir);
-
-    expect(result).toBe(2); // blocked
-
-    const finalRaw = await readFile(path.join(tmpDir, 'feature_list.json'), 'utf-8');
-    const final = JSON.parse(finalRaw) as FeatureList;
-    const feature = final.features[0];
-    expect(feature?.status).toBe('blocked');
-    expect(feature?.attempts).toBe(2);
-    expect(feature?.last_error).toContain('verification failed');
+    expect(harnessState.invocations.map(invocation => invocation.featureId)).toEqual(['F003', 'F002', 'F001']);
   });
 });

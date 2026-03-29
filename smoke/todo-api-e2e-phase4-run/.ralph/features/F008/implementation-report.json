@@ -1,0 +1,29 @@
+{
+  "feature_id": "F008",
+  "outcome": "ready_for_review",
+  "summary": "Added input validation to POST and PATCH /todos endpoints. POST rejects missing, null, blank, and non-string titles. PATCH rejects empty/whitespace titles and non-boolean completed values. All errors return 400 with JSON { error: '...' }. 11 new tests in validation.test.ts, all 26 tests pass, build clean.",
+  "commit_sha": "b00fb9f",
+  "changed_files": [
+    "src/routes/todos.ts",
+    "tests/validation.test.ts"
+  ],
+  "commands_run": [
+    "npm run build",
+    "npm test"
+  ],
+  "verification_results": [
+    {
+      "command": "npm run build",
+      "status": "pass",
+      "details": "tsc compiled with no errors"
+    },
+    {
+      "command": "npm test",
+      "status": "pass",
+      "details": "26 tests passed across 5 test files (including 11 new validation tests)"
+    }
+  ],
+  "notes": [
+    "PATCH validation only rejects when fields are provided with invalid values — omitting title or completed is allowed for partial updates"
+  ]
+}

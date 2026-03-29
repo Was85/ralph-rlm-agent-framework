@@ -11,6 +11,7 @@ const execAsync = promisify(exec);
 describe('WorktreeManager', () => {
   let tmpDir: string;
   let manager: WorktreeManagerImpl;
+  let mainBranch: string;
 
   beforeEach(async () => {
     tmpDir = await mkdtemp(path.join(tmpdir(), 'wt-test-'));
@@ -23,6 +24,8 @@ describe('WorktreeManager', () => {
     await writeFile(path.join(tmpDir, 'README.md'), '# Test', 'utf-8');
     await execAsync('git add .', { cwd: tmpDir });
     await execAsync('git commit -m "initial"', { cwd: tmpDir });
+    const { stdout } = await execAsync('git branch --show-current', { cwd: tmpDir });
+    mainBranch = stdout.trim();
   });
 
   afterEach(async () => {
@@ -36,14 +39,14 @@ describe('WorktreeManager', () => {
   it('creates a worktree with correct branch name', async () => {
     const wt = await manager.create('F001', tmpDir);
 
-    expect(wt.name).toBe('ralph-F001');
-    expect(wt.branch).toBe('ralph/F001');
+    expect(wt.name).toMatch(/^ralph-F001-/);
+    expect(wt.branch).toMatch(/^ralph\/F001--/);
     expect(wt.featureId).toBe('F001');
     expect(existsSync(wt.path)).toBe(true);
 
     // Verify git branch exists
     const { stdout } = await execAsync('git branch', { cwd: tmpDir });
-    expect(stdout).toContain('ralph/F001');
+    expect(stdout).toContain(wt.branch);
   });
 
   it('worktree has its own working copy', async () => {
@@ -60,6 +63,7 @@ describe('WorktreeManager', () => {
 
   it('merges worktree changes back to main', async () => {
     const wt = await manager.create('F001', tmpDir);
+    const { stdout: mainHeadBefore } = await execAsync('git rev-parse HEAD', { cwd: tmpDir });
 
     // Make a commit in the worktree
     await writeFile(path.join(wt.path, 'feature.txt'), 'hello', 'utf-8');
@@ -71,9 +75,15 @@ describe('WorktreeManager', () => {
 
     expect(result.success).toBe(true);
     expect(result.conflicted).toBe(false);
+    expect(result.mergeCommit).toBeTruthy();
 
     // File should now exist in main repo
     expect(existsSync(path.join(tmpDir, 'feature.txt'))).toBe(true);
+    const { stdout: currentBranch } = await execAsync('git branch --show-current', { cwd: tmpDir });
+    expect(currentBranch.trim()).toBe(mainBranch);
+    const { stdout: mainHeadAfter } = await execAsync('git rev-parse HEAD', { cwd: tmpDir });
+    expect(mainHeadAfter.trim()).not.toBe(mainHeadBefore.trim());
+    expect(mainHeadAfter.trim()).toBe(result.mergeCommit);
   });
 
   it('detects merge conflicts', async () => {
@@ -94,6 +104,8 @@ describe('WorktreeManager', () => {
     expect(result.success).toBe(false);
     expect(result.conflicted).toBe(true);
     expect(result.error).toContain('CONFLICT');
+    const { stdout: currentBranch } = await execAsync('git branch --show-current', { cwd: tmpDir });
+    expect(currentBranch.trim()).toBe(mainBranch);
   });
 
   it('cleans up worktree and branch', async () => {
@@ -111,18 +123,28 @@ describe('WorktreeManager', () => {
   });
 
   it('cleanupAll removes all ralph worktrees and branches', async () => {
-    await manager.create('F001', tmpDir);
-    await manager.create('F002', tmpDir);
+    const wt1 = await manager.create('F001', tmpDir);
+    const wt2 = await manager.create('F002', tmpDir);
 
     const { stdout: before } = await execAsync('git branch', { cwd: tmpDir });
-    expect(before).toContain('ralph/F001');
-    expect(before).toContain('ralph/F002');
+    expect(before).toContain(wt1.branch);
+    expect(before).toContain(wt2.branch);
 
     await manager.cleanupAll(tmpDir);
 
     const { stdout: after } = await execAsync('git branch', { cwd: tmpDir });
-    expect(after).not.toContain('ralph/F001');
-    expect(after).not.toContain('ralph/F002');
+    expect(after).not.toContain(wt1.branch);
+    expect(after).not.toContain(wt2.branch);
+  });
+
+  it('creates a fresh worktree even when a legacy feature branch already exists', async () => {
+    await execAsync('git branch ralph/F001', { cwd: tmpDir });
+
+    const wt = await manager.create('F001', tmpDir);
+
+    expect(wt.branch).toMatch(/^ralph\/F001--/);
+    expect(wt.branch).not.toBe('ralph/F001');
+    expect(existsSync(wt.path)).toBe(true);
   });
 
   it('revertLastMerge undoes a merge commit', async () => {
@@ -132,10 +154,13 @@ describe('WorktreeManager', () => {
     await execAsync('git add .', { cwd: wt.path });
     await execAsync('git commit -m "feat: F001"', { cwd: wt.path });
 
-    await manager.merge(wt, tmpDir);
+    const mergeResult = await manager.merge(wt, tmpDir);
     expect(existsSync(path.join(tmpDir, 'feature.txt'))).toBe(true);
 
-    await manager.revertLastMerge(tmpDir);
+    expect(mergeResult.mergeCommit).toBeTruthy();
+    await manager.revertLastMerge(tmpDir, mergeResult.mergeCommit!);
     expect(existsSync(path.join(tmpDir, 'feature.txt'))).toBe(false);
+    const { stdout: currentBranch } = await execAsync('git branch --show-current', { cwd: tmpDir });
+    expect(currentBranch.trim()).toBe(mainBranch);
   });
 });

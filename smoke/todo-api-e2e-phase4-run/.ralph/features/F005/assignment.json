@@ -1,0 +1,27 @@
+{
+  "feature_id": "F005",
+  "description": "Add GET /todos/:id endpoint returning a single item or 404",
+  "acceptance_criteria": [
+    "GET /todos/:id returns 200 with the item when it exists",
+    "GET /todos/:id returns 404 with JSON error details when item does not exist",
+    "Unit test: todos.test.ts > 'GET /todos/:id returns the item' verifies success",
+    "Unit test: todos.test.ts > 'GET /todos/:id returns 404 for unknown id' verifies not-found",
+    "Build passes (npm run build)",
+    "Tests pass (npm test)"
+  ],
+  "verification_steps": [
+    "npm run build",
+    "npm test"
+  ],
+  "attempts": 1,
+  "priority": 5,
+  "last_error": "Implementation report commit SHA b4a427a does not match HEAD b4a427a5eac62771ed180eea43e0ba22c7a2d37d",
+  "source_requirement": "## Functional Requirements > ### 4. Read a single todo",
+  "depends_on": [
+    "F004"
+  ],
+  "related_files": [
+    "src/routes/todos.ts",
+    "tests/todos.test.ts"
+  ]
+}

@@ -1,0 +1,70 @@
+# Ralph-RLM-Framework Progress Log
+
+## Codebase Patterns
+<!-- Reusable patterns discovered during initialization and implementation. -->
+<!-- The Implementer reads this FIRST each iteration to stay consistent. -->
+- **Project Structure:** Greenfield — no existing code. Expected layout: src/ for app code, tests/ for test files.
+- **Tech Stack:** Node.js, TypeScript, Express, Vitest, Supertest, npm
+- **Coding Style:** TypeScript strict mode. Export Express app as factory (no listener) for testability. Entry point in src/index.ts calls listen().
+- **Test Pattern:** Vitest + Supertest. Test files in tests/ directory named *.test.ts. Use supertest(app) to make HTTP assertions without starting a server.
+- **Build/Test Commands:** `npm install` (restore), `npm run build` (compile TS), `npm test` (run vitest)
+- **Key Files:** src/app.ts (Express factory), src/index.ts (entry point), src/store.ts (TodoItem interface + in-memory persistence), src/routes/todos.ts (route handlers)
+- **Error Responses:** All errors must be JSON. Use 400 for validation, 404 for not-found, with descriptive messages.
+- **In-Memory Store:** No database — use a simple array/map for persistence. Store resets between server restarts. Tests should handle store isolation (reset between tests).
+
+---
+
+## Project Information
+- **Project:** todo-api-e2e-phase4-run
+- **Description:** Tiny REST API for managing todos — smoke test for Ralph-RLM framework
+- **Created:** 2026-03-28
+- **Total Features:** 8
+- **Codebase:** 0 files (greenfield)
+
+## Current Status
+- **Complete:** 0
+- **In Progress:** 0
+- **Pending:** 8
+- **Blocked:** 0
+
+---
+
+## Iteration Log
+
+### INITIALIZATION - 2026-03-28
+**Agent:** Initializer
+**Actions:**
+- Analyzed codebase (0 files — greenfield project)
+- No existing implementations found
+- Analyzed PRD: 7 functional requirements for a TypeScript/Express todos API
+- Created feature_list.json with 8 features (all pending)
+- Created claude-progress.txt
+- Initial git commit
+
+**Dependency Graph:**
+```
+F001 (bootstrap)
+├── F002 (health endpoint)
+├── F003 (TodoItem model + store)
+│   └── F004 (POST + GET /todos)
+│       ├── F005 (GET /todos/:id)
+│       ├── F006 (PATCH /todos/:id)
+│       │   └── F008 (validation — also depends on F004)
+│       └── F007 (DELETE /todos/:id)
+```
+
+**Next:** F001 - Bootstrap Node.js project with TypeScript, Express app factory, entry point, and smoke test
+
+---
+[2026-03-28T01:56:30.353Z] APPROVED: F001 — evaluator approved and verification passed
+[2026-03-28T02:01:53.654Z] APPROVED: F002 — evaluator approved and verification passed
+[2026-03-28T02:05:49.520Z] RETRY: F003 — Implementation report commit SHA 75476b7 does not match HEAD 75476b75dab53344a2e6b31c64ac44a826c9ca1d
+[2026-03-28T02:11:08.035Z] APPROVED: F003 — evaluator approved and verification passed
+[2026-03-28T02:18:29.868Z] RETRY: F004 — Implementation report commit SHA 53f938c does not match HEAD 53f938c8f471035ada6d5a2919a5a8f31c7549cb
+[2026-03-28T02:24:37.055Z] APPROVED: F004 — evaluator approved and verification passed
+[2026-03-28T02:28:48.180Z] RETRY: F005 — Implementation report commit SHA b4a427a does not match HEAD b4a427a5eac62771ed180eea43e0ba22c7a2d37d
+[2026-03-28T02:35:02.269Z] APPROVED: F005 — evaluator approved and verification passed
+[2026-03-28T02:43:50.274Z] APPROVED: F006 — evaluator approved and verification passed
+[2026-03-28T02:51:18.993Z] APPROVED: F007 — evaluator approved and verification passed
+[2026-03-28T02:57:07.554Z] RETRY: F008 — Implementer did not write a valid implementation-report.json artifact
+[2026-03-28T03:06:01.053Z] APPROVED: F008 — evaluator approved and verification passed

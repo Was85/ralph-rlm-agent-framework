@@ -1,0 +1,27 @@
+{
+  "feature_id": "F002",
+  "description": "Add GET /health endpoint returning 200 with JSON health status",
+  "acceptance_criteria": [
+    "GET /health returns HTTP 200",
+    "Response body is JSON with a field indicating the service is healthy",
+    "Unit test: health.test.ts > 'GET /health returns 200' verifies status code",
+    "Unit test: health.test.ts > 'GET /health returns JSON health status' verifies body",
+    "Build passes (npm run build)",
+    "Tests pass (npm test)"
+  ],
+  "verification_steps": [
+    "npm run build",
+    "npm test"
+  ],
+  "attempts": 0,
+  "priority": 2,
+  "last_error": null,
+  "source_requirement": "## Functional Requirements > ### 2. Health endpoint",
+  "depends_on": [
+    "F001"
+  ],
+  "related_files": [
+    "src/app.ts",
+    "tests/health.test.ts"
+  ]
+}

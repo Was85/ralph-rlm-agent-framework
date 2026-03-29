@@ -3,3 +3,6 @@ dist/
 *.tgz
 .ralph-prompt-temp.md
 ralph-debug.log
+.smoke-todo.pid
+smoke-todo.out.log
+smoke-todo.err.log

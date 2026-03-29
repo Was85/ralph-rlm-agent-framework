@@ -18,6 +18,10 @@ Your ONLY outputs are: `feature_list.json`, `claude-progress.txt`, and a git com
 6. Make initial git commit containing ONLY feature_list.json and claude-progress.txt
 7. **STOP IMMEDIATELY** — do not proceed to implementation. Exit now.
 
+Bootstrap story note:
+- For a greenfield Node/TypeScript bootstrap feature, `related_files` may use up to 6 files instead of 4 when that is necessary to make the project runnable.
+- Prefer including `.gitignore` and exactly one minimal runtime entry file such as `src/index.ts` when the feature introduces `package.json` plus `tsconfig*.json`.
+
 ---
 
 ## AVAILABLE SKILLS
@@ -203,6 +207,7 @@ Scale features to the actual complexity of the PRD. Do NOT over-generate feature
   },
   "config": {
     "max_attempts_per_feature": 5,
+    "install_command": "npm install",
     "test_command": "dotnet test",
     "build_command": "dotnet build"
   },
@@ -244,6 +249,7 @@ Scale features to the actual complexity of the PRD. Do NOT over-generate feature
 | `depends_on` | Yes | Array of feature IDs that must be complete before this one (e.g., `["F001", "F003"]`). Empty `[]` if no dependencies. |
 | `source_requirement` | Yes | Which PRD section this feature traces back to (e.g., `"## Authentication > Login"`). Enables the Validator to verify full coverage. |
 | `verification_steps` | Yes | Commands to verify the feature works (typically build + test commands from config). |
+| `install_command` (in `config`) | Recommended when needed | Dependency/bootstrap command to run before build/test verification (examples: `npm install`, `pnpm install --frozen-lockfile`, `dotnet restore`). Include it whenever the project requires package restore before the build/test commands can succeed on a fresh checkout. |
 
 ### Include `related_files` (Important for Team Mode)
 
@@ -505,8 +511,12 @@ First feature: F001 - [description]
 - ✅ Reference existing files in `related_files`
 - ✅ Set ALL statuses to "pending"
 - ✅ **Include test criteria in every feature** ("Build passes" + at least one test)
+- ✅ **Include the exact build/test commands in `verification_steps`** whenever they exist in `config`
+- ✅ **For non-UI stories, call out unit-test evidence explicitly**
+- ✅ **For UI stories, call out Playwright/E2E evidence explicitly**
 - ✅ **Fill `source_requirement` for every feature** (traceability to PRD)
 - ✅ **Set `priority` and `depends_on`** for correct execution order
+- ✅ Keep `related_files` to **1-4 files max** and include at least one test file for the story
 - ✅ **Run self-validation checklist** before saving feature_list.json
 - ✅ **Decompose systematically** (by entity, operation, path, layer)
 
@@ -566,13 +576,13 @@ The feature_list.json will be queried by other agents using jq or other JSON too
   "attempts": 0,
   "last_error": null,
   "notes": "",
-  "related_files": []
+  "related_files": ["src/Routes/TodosRoute.cs", "tests/Routes/TodosRouteTests.cs"]
 }
 ```
 
 **Avoid:**
 - Long descriptions (keep under 100 chars)
-- Too many acceptance criteria (2-5 is ideal, but always include test + build)
+- Too many acceptance criteria (2-10 is acceptable, but always include test + build)
 - Verbose notes (save details for claude-progress.txt)
 - Empty `source_requirement` or `verification_steps`
 

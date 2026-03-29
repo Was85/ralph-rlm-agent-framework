@@ -32,6 +32,29 @@ export async function checkCli(runner: RunnerType): Promise<boolean> {
   }
 }
 
+export async function checkRunnerAuth(runner: RunnerType): Promise<boolean> {
+  if (runner !== 'claude') {
+    return true;
+  }
+
+  if (process.env.ANTHROPIC_API_KEY) {
+    return true;
+  }
+
+  try {
+    const { stdout } = await execFileAsync('claude', ['auth', 'status']);
+    const parsed = JSON.parse(stdout) as { loggedIn?: boolean };
+    if (parsed.loggedIn) {
+      return true;
+    }
+  } catch {
+    // Fall through to the shared error below.
+  }
+
+  logger.error('claude CLI is installed but not authenticated. Run "claude auth login" or set ANTHROPIC_API_KEY.');
+  return false;
+}
+
 export async function checkFile(filePath: string, label: string): Promise<boolean> {
   try {
     await access(filePath);
@@ -70,6 +93,7 @@ export async function runPreflight(
 
   if (!(await checkGit(cwd))) return false;
   if (!(await checkCli(runner))) return false;
+  if (!(await checkRunnerAuth(runner))) return false;
 
   switch (phase) {
     case 'init':
@@ -86,6 +110,8 @@ export async function runPreflight(
     case 'run':
       if (!(await checkFile(path.join(cwd, 'feature_list.json'), 'feature_list.json'))) return false;
       if (!(await checkFile(path.join(promptsDir, 'implementer.md'), 'prompts/implementer.md'))) return false;
+      if (!(await checkFile(path.join(promptsDir, 'feature-planner.md'), 'prompts/feature-planner.md'))) return false;
+      if (!(await checkFile(path.join(promptsDir, 'evaluator.md'), 'prompts/evaluator.md'))) return false;
       await ensureExists(path.join(cwd, 'claude-progress.txt'));
       break;
 
