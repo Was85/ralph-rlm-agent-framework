@@ -121,6 +121,45 @@ ralph run
 ralph status
 ```
 
+### Fastest Way To Start
+
+If you are new to Ralph, do not start with every phase manually. The shortest usable path is:
+
+1. Run `scaffold` once.
+2. Write a real `prd.md`.
+3. Run `auto --optimize`.
+4. Check `status`.
+
+For Claude:
+
+```bash
+cd your-project
+git init
+ralph scaffold
+# write prd.md
+ralph auto --optimize
+ralph status
+```
+
+For Copilot:
+
+```bash
+cd your-project
+git init
+ralph scaffold --runner copilot
+# write prd.md
+ralph auto --runner copilot --optimize
+ralph status
+```
+
+Start in sequential mode first. After that, use team mode only when the backlog has multiple independent ready features:
+
+```bash
+ralph run --team --teammates 3
+```
+
+You do not need to edit `.ralph/` files directly unless you are debugging a blocked run.
+
 ## Recommended Workflow
 
 ### 1. Scaffold

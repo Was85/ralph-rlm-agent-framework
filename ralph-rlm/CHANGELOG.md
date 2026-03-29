@@ -1,5 +1,28 @@
 # Changelog
 
+## 4.0.0 (2026-03-29)
+
+### Breaking Changes
+
+- Ralph is now a framework-owned `planner -> implementer -> verifier` harness instead of the older chat-owned loop
+- Feature completion now requires real per-feature artifacts, a real feature commit, and post-merge verification
+- Team mode now uses worktree isolation and merges back into the branch Ralph was started from
+- Story generation is stricter: weak or oversized features are rejected earlier by framework quality gates
+- Runtime state is now durable under `.ralph/runtime/`, enabling resumable runs from repo state alone
+
+### Added
+
+- Full feature artifact chain under `.ralph/features/<id>/`
+- Durable runtime session and per-feature recovery state
+- Smoke-proven sequential and team support for both Claude and Copilot
+- Reproducible todo CRUD smoke fixtures and wrapper scripts
+
+### Changed
+
+- `scaffold`, `init`, `validate`, `optimize`, `run`, and `status` now align with the new harness workflow
+- Prompts are materialized into the project so both Claude and Copilot can run from project-local files
+- Documentation now explains the beginner path separately from the power-user phase controls
+
 ## 3.2.1 (2026-03-09)
 
 ### Fixed
