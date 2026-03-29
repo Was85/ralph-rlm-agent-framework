@@ -9,6 +9,8 @@ function configToRunnerConfig(config: RalphConfig) {
     debug: config.debug,
     dangerouslySkipPermissions: config.dangerouslySkipPermissions,
     stream: config.stream,
+    bare: false,
+    settingSources: undefined,
   };
 }
 
@@ -64,6 +66,16 @@ describe('pipeline snapshot', () => {
       const config = buildConfig({ dangerouslySkipPermissions: true });
       const args = runner.buildArgs(prompt, configToRunnerConfig(config));
       expect(args).toEqual(['--dangerously-skip-permissions', '-p', 'test prompt']);
+    });
+
+    it('bare', () => {
+      const args = runner.buildArgs(prompt, { ...configToRunnerConfig(buildConfig({})), bare: true });
+      expect(args).toEqual(['--bare', '-p', 'test prompt']);
+    });
+
+    it('setting sources', () => {
+      const args = runner.buildArgs(prompt, { ...configToRunnerConfig(buildConfig({})), settingSources: 'project,local' });
+      expect(args).toEqual(['--setting-sources', 'project,local', '-p', 'test prompt']);
     });
 
     it('allowAllTools alias', () => {

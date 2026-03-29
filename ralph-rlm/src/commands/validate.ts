@@ -45,6 +45,7 @@ export async function runValidate(
       debug: config.debug,
       dangerouslySkipPermissions: config.dangerouslySkipPermissions,
       stream: config.stream,
+      settingSources: 'project,local',
     });
 
     // Check for completion

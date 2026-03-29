@@ -7,6 +7,8 @@ export class ClaudeRunner implements Runner {
 
   buildArgs(prompt: string, config: RunnerConfig): string[] {
     const args: string[] = [];
+    if (config.bare) args.push('--bare');
+    if (config.settingSources) args.push('--setting-sources', config.settingSources);
     if (config.dangerouslySkipPermissions) args.push('--dangerously-skip-permissions');
     if (config.debug) args.push('--debug');
     else if (config.verbose) args.push('--verbose');

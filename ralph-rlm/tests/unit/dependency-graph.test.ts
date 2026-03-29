@@ -163,4 +163,15 @@ describe('buildExecutionPlan', () => {
     expect(plan.levels).toHaveLength(1);
     expect(plan.levels[0]!.featureIds).toEqual(['F002']);
   });
+
+  it('excludes pending features whose dependencies are blocked', () => {
+    const features = [
+      createFeature({ id: 'F001', status: 'blocked' }),
+      createFeature({ id: 'F002', status: 'pending', depends_on: ['F001'] }),
+    ];
+
+    const plan = buildExecutionPlan(features);
+
+    expect(plan.levels).toHaveLength(0);
+  });
 });

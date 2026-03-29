@@ -7,6 +7,8 @@ function makeConfig(overrides: Partial<RunnerConfig> = {}): RunnerConfig {
     debug: false,
     dangerouslySkipPermissions: false,
     stream: false,
+    bare: false,
+    settingSources: undefined,
     ...overrides,
   };
 }
@@ -26,6 +28,17 @@ describe('ClaudeRunner', () => {
     it('returns ["-p", prompt] with no flags', () => {
       const args = runner.buildArgs('hello', makeConfig());
       expect(args).toEqual(['-p', 'hello']);
+    });
+
+    it('adds --bare when bare mode is enabled', () => {
+      const args = runner.buildArgs('hello', makeConfig({ bare: true }));
+      expect(args).toContain('--bare');
+      expect(args[0]).toBe('--bare');
+    });
+
+    it('adds --setting-sources when configured', () => {
+      const args = runner.buildArgs('hello', makeConfig({ settingSources: 'project,local' }));
+      expect(args).toEqual(['--setting-sources', 'project,local', '-p', 'hello']);
     });
 
     it('adds --dangerously-skip-permissions when set', () => {
