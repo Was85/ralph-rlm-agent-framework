@@ -1,0 +1,30 @@
+{
+  "feature_id": "F005",
+  "goal": "Add GET /todos/:id endpoint returning a single item or 404 with JSON error details.",
+  "scope_summary": "Add a parameterized GET route to the existing todos router that calls store.getById and returns 200 with the item or 404 with a JSON error body. Add two tests to the existing test file covering success and not-found cases.",
+  "planned_changes": [
+    "Add GET /:id route handler in src/routes/todos.ts using store.getById, returning 200 or 404 with JSON error",
+    "Add describe block with two tests in tests/todos.test.ts: 'GET /todos/:id returns the item' and 'GET /todos/:id returns 404 for unknown id'"
+  ],
+  "files_to_touch": [
+    "src/routes/todos.ts",
+    "tests/todos.test.ts"
+  ],
+  "commands_to_run": [
+    "npm run build",
+    "npm test"
+  ],
+  "acceptance_checks": [
+    "GET /todos/:id returns 200 with the item when it exists",
+    "GET /todos/:id returns 404 with JSON error details when item does not exist",
+    "Unit test: todos.test.ts > 'GET /todos/:id returns the item' verifies success",
+    "Unit test: todos.test.ts > 'GET /todos/:id returns 404 for unknown id' verifies not-found",
+    "Build passes (npm run build)",
+    "Tests pass (npm test)"
+  ],
+  "commit_message": "feat(F005): add GET /todos/:id endpoint with tests",
+  "risks": [
+    "store.getById already exists and returns undefined for missing IDs, but the route must explicitly set 404 status and a JSON body — forgetting the status or sending an empty body would silently pass supertest if assertions are weak",
+    "Test names must match acceptance criteria exactly or the harness will reject the feature"
+  ]
+}

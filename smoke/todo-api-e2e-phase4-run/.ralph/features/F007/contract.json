@@ -1,0 +1,34 @@
+{
+  "feature_id": "F007",
+  "goal": "Add a DELETE /todos/:id endpoint that removes a todo item and returns 204, or 404 for unknown ids.",
+  "scope_summary": "Add a delete method to the store class that removes an item by id and returns a boolean. Add a router.delete handler that calls store.delete, returning 204 on success or 404 with JSON error. Add two test cases in the existing describe/test structure.",
+  "planned_changes": [
+    "Add delete(id) method to the store class in src/store.ts returning boolean",
+    "Add router.delete handler in src/routes/todos.ts following existing 404 pattern",
+    "Add test that creates an item, deletes it, asserts 204, then confirms GET /todos no longer includes it",
+    "Add test that sends DELETE to /todos/999 and asserts 404 with JSON error"
+  ],
+  "files_to_touch": [
+    "src/store.ts",
+    "src/routes/todos.ts",
+    "tests/todos.test.ts"
+  ],
+  "commands_to_run": [
+    "npm run build",
+    "npm test"
+  ],
+  "acceptance_checks": [
+    "DELETE /todos/:id returns 204 on success",
+    "DELETE /todos/:id returns 404 with JSON error for unknown id",
+    "Deleted item no longer appears in GET /todos or GET /todos/:id",
+    "Unit test: todos.test.ts > DELETE /todos/:id removes the item verifies deletion",
+    "Unit test: todos.test.ts > DELETE /todos/:id returns 404 for unknown id verifies not-found",
+    "Build passes (npm run build)",
+    "Tests pass (npm test)"
+  ],
+  "commit_message": "feat(F007): add DELETE /todos/:id endpoint with tests",
+  "risks": [
+    "Store delete must use Map.delete and return the boolean result so the router can distinguish found vs not-found",
+    "Test names must match acceptance criteria exactly for automated verification"
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "feature_id": "F006",
+  "goal": "Add PATCH /todos/:id endpoint to update a todo item title and/or completed status.",
+  "scope_summary": "Add an update method to the store that accepts partial fields (title, completed) and refreshes updatedAt. Add a PATCH route in the todos router that looks up the item, returns 404 if missing, otherwise delegates to store.update and returns the updated item with 200. Add two tests matching the required names.",
+  "planned_changes": [
+    "Add store update(id, fields) method in src/store.ts that merges partial updates and sets updatedAt to now",
+    "Add PATCH /:id route in src/routes/todos.ts that validates the item exists, calls store.update, returns 200 or 404",
+    "Add describe block in tests/todos.test.ts with two tests for update success and 404"
+  ],
+  "files_to_touch": [
+    "src/store.ts",
+    "src/routes/todos.ts",
+    "tests/todos.test.ts"
+  ],
+  "commands_to_run": [
+    "npm run build",
+    "npm test"
+  ],
+  "acceptance_checks": [
+    "PATCH /todos/:id updates title and/or completed and returns 200 with updated item",
+    "updatedAt changes when an update succeeds",
+    "PATCH /todos/:id returns 404 with JSON error for unknown id",
+    "Unit test: todos.test.ts > PATCH /todos/:id updates the item verifies update",
+    "Unit test: todos.test.ts > PATCH /todos/:id returns 404 for unknown id verifies not-found",
+    "Build passes (npm run build)",
+    "Tests pass (npm test)"
+  ],
+  "commit_message": "feat(F006): add PATCH /todos/:id endpoint with tests",
+  "risks": [
+    "Store has no update method yet — must be added without breaking existing consumers",
+    "Partial update must handle sending only title, only completed, or both without clearing the other field",
+    "updatedAt assertion in tests may be flaky if compared by equality — test should verify it changed, not match an exact value"
+  ]
+}

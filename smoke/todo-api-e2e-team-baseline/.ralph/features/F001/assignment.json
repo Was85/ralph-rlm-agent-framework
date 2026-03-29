@@ -1,0 +1,30 @@
+{
+  "feature_id": "F001",
+  "description": "Bootstrap Node.js project with TypeScript, Express app factory, entry point, and smoke test",
+  "acceptance_criteria": [
+    "package.json has typescript, express, vitest, and supertest dependencies",
+    "tsconfig.json compiles TypeScript to JavaScript",
+    "Express app exported as factory so tests import without starting a listener",
+    "src/index.ts starts the server on a port",
+    "npm scripts: build, test are defined",
+    "Unit test: app.test.ts > 'app boots without error' verifies the app can be imported",
+    "Build passes (npm run build)",
+    "Tests pass (npm test)"
+  ],
+  "verification_steps": [
+    "npm install",
+    "npm run build",
+    "npm test"
+  ],
+  "attempts": 0,
+  "priority": 1,
+  "last_error": null,
+  "source_requirement": "## Functional Requirements > ### 1. Project bootstrap",
+  "depends_on": [],
+  "related_files": [
+    "package.json",
+    "src/app.ts",
+    "src/index.ts",
+    "tests/app.test.ts"
+  ]
+}

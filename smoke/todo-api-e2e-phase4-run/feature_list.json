@@ -1,0 +1,271 @@
+{
+  "project": "todo-api-e2e-phase4-run",
+  "description": "Tiny REST API for managing todos - smoke test for Ralph-RLM using TypeScript, Express, and Vitest",
+  "created": "2026-03-28",
+  "codebase_analysis": {
+    "total_files": 0,
+    "existing_implementations": [],
+    "tech_stack": "Node.js, TypeScript, Express, Vitest, Supertest"
+  },
+  "config": {
+    "max_attempts_per_feature": 5,
+    "install_command": "npm install",
+    "build_command": "npm run build",
+    "test_command": "npm test"
+  },
+  "stats": {
+    "total": 8,
+    "complete": 8,
+    "in_progress": 0,
+    "pending": 0,
+    "blocked": 0
+  },
+  "features": [
+    {
+      "id": "F001",
+      "description": "Bootstrap Node.js project with TypeScript, Express app factory, entry point, and smoke test",
+      "priority": 1,
+      "depends_on": [],
+      "source_requirement": "## Functional Requirements > ### 1. Project bootstrap",
+      "acceptance_criteria": [
+        "package.json has typescript, express, vitest, and supertest dependencies",
+        "tsconfig.json compiles TypeScript to JavaScript",
+        "Express app exported as factory so tests import without starting a listener",
+        "src/index.ts starts the server on a port",
+        "npm scripts: build, test are defined",
+        "Unit test: app.test.ts > 'app boots without error' verifies the app can be imported",
+        "Build passes (npm run build)",
+        "Tests pass (npm test)"
+      ],
+      "verification_steps": [
+        "npm install",
+        "npm run build",
+        "npm test"
+      ],
+      "status": "complete",
+      "attempts": 0,
+      "last_error": null,
+      "notes": "Foundation for all other features. Also creates tsconfig.json.",
+      "related_files": [
+        "package.json",
+        "src/app.ts",
+        "src/index.ts",
+        "tests/app.test.ts"
+      ]
+    },
+    {
+      "id": "F002",
+      "description": "Add GET /health endpoint returning 200 with JSON health status",
+      "priority": 2,
+      "depends_on": [
+        "F001"
+      ],
+      "source_requirement": "## Functional Requirements > ### 2. Health endpoint",
+      "acceptance_criteria": [
+        "GET /health returns HTTP 200",
+        "Response body is JSON with a field indicating the service is healthy",
+        "Unit test: health.test.ts > 'GET /health returns 200' verifies status code",
+        "Unit test: health.test.ts > 'GET /health returns JSON health status' verifies body",
+        "Build passes (npm run build)",
+        "Tests pass (npm test)"
+      ],
+      "verification_steps": [
+        "npm run build",
+        "npm test"
+      ],
+      "status": "complete",
+      "attempts": 0,
+      "last_error": null,
+      "notes": "",
+      "related_files": [
+        "src/app.ts",
+        "tests/health.test.ts"
+      ]
+    },
+    {
+      "id": "F003",
+      "description": "Define TodoItem interface and in-memory store with add, getAll, getById helpers",
+      "priority": 3,
+      "depends_on": [
+        "F001"
+      ],
+      "source_requirement": "## Functional Requirements > ### 3. Create and list todos",
+      "acceptance_criteria": [
+        "TodoItem type has id, title, completed, createdAt, and updatedAt fields",
+        "In-memory store supports add, getAll, and getById operations",
+        "New items default completed to false and set createdAt/updatedAt",
+        "Unit test: store.test.ts > 'add returns an item with all required fields' verifies model shape",
+        "Unit test: store.test.ts > 'getAll returns items in insertion order' verifies ordering",
+        "Build passes (npm run build)",
+        "Tests pass (npm test)"
+      ],
+      "verification_steps": [
+        "npm run build",
+        "npm test"
+      ],
+      "status": "complete",
+      "attempts": 1,
+      "last_error": null,
+      "notes": "F002 and F003 are independent and can run in parallel.",
+      "related_files": [
+        "src/store.ts",
+        "tests/store.test.ts"
+      ]
+    },
+    {
+      "id": "F004",
+      "description": "Add POST /todos and GET /todos endpoints for creating and listing items",
+      "priority": 4,
+      "depends_on": [
+        "F003"
+      ],
+      "source_requirement": "## Functional Requirements > ### 3. Create and list todos",
+      "acceptance_criteria": [
+        "POST /todos with valid title creates an item and returns 201 with the created item",
+        "GET /todos returns 200 with an array of all items in creation order",
+        "Created items have id, title, completed=false, createdAt, and updatedAt",
+        "Unit test: todos.test.ts > 'POST /todos creates an item' verifies creation",
+        "Unit test: todos.test.ts > 'GET /todos returns all items' verifies listing",
+        "Build passes (npm run build)",
+        "Tests pass (npm test)"
+      ],
+      "verification_steps": [
+        "npm run build",
+        "npm test"
+      ],
+      "status": "complete",
+      "attempts": 1,
+      "last_error": null,
+      "notes": "Registers todos routes in the Express app.",
+      "related_files": [
+        "src/routes/todos.ts",
+        "src/app.ts",
+        "tests/todos.test.ts"
+      ]
+    },
+    {
+      "id": "F005",
+      "description": "Add GET /todos/:id endpoint returning a single item or 404",
+      "priority": 5,
+      "depends_on": [
+        "F004"
+      ],
+      "source_requirement": "## Functional Requirements > ### 4. Read a single todo",
+      "acceptance_criteria": [
+        "GET /todos/:id returns 200 with the item when it exists",
+        "GET /todos/:id returns 404 with JSON error details when item does not exist",
+        "Unit test: todos.test.ts > 'GET /todos/:id returns the item' verifies success",
+        "Unit test: todos.test.ts > 'GET /todos/:id returns 404 for unknown id' verifies not-found",
+        "Build passes (npm run build)",
+        "Tests pass (npm test)"
+      ],
+      "verification_steps": [
+        "npm run build",
+        "npm test"
+      ],
+      "status": "complete",
+      "attempts": 1,
+      "last_error": null,
+      "notes": "",
+      "related_files": [
+        "src/routes/todos.ts",
+        "tests/todos.test.ts"
+      ]
+    },
+    {
+      "id": "F006",
+      "description": "Add PATCH /todos/:id endpoint to update title and/or completed status",
+      "priority": 6,
+      "depends_on": [
+        "F004"
+      ],
+      "source_requirement": "## Functional Requirements > ### 5. Update a todo",
+      "acceptance_criteria": [
+        "PATCH /todos/:id updates title and/or completed and returns 200 with updated item",
+        "updatedAt changes when an update succeeds",
+        "PATCH /todos/:id returns 404 with JSON error for unknown id",
+        "Unit test: todos.test.ts > 'PATCH /todos/:id updates the item' verifies update",
+        "Unit test: todos.test.ts > 'PATCH /todos/:id returns 404 for unknown id' verifies not-found",
+        "Build passes (npm run build)",
+        "Tests pass (npm test)"
+      ],
+      "verification_steps": [
+        "npm run build",
+        "npm test"
+      ],
+      "status": "complete",
+      "attempts": 0,
+      "last_error": null,
+      "notes": "F005, F006, F007 depend on F004 but are independent of each other.",
+      "related_files": [
+        "src/routes/todos.ts",
+        "src/store.ts",
+        "tests/todos.test.ts"
+      ]
+    },
+    {
+      "id": "F007",
+      "description": "Add DELETE /todos/:id endpoint removing the item and returning 204",
+      "priority": 7,
+      "depends_on": [
+        "F004"
+      ],
+      "source_requirement": "## Functional Requirements > ### 6. Delete a todo",
+      "acceptance_criteria": [
+        "DELETE /todos/:id returns 204 on success",
+        "DELETE /todos/:id returns 404 with JSON error for unknown id",
+        "Deleted item no longer appears in GET /todos or GET /todos/:id",
+        "Unit test: todos.test.ts > 'DELETE /todos/:id removes the item' verifies deletion",
+        "Unit test: todos.test.ts > 'DELETE /todos/:id returns 404 for unknown id' verifies not-found",
+        "Build passes (npm run build)",
+        "Tests pass (npm test)"
+      ],
+      "verification_steps": [
+        "npm run build",
+        "npm test"
+      ],
+      "status": "complete",
+      "attempts": 0,
+      "last_error": null,
+      "notes": "",
+      "related_files": [
+        "src/routes/todos.ts",
+        "src/store.ts",
+        "tests/todos.test.ts"
+      ]
+    },
+    {
+      "id": "F008",
+      "description": "Add input validation returning 400 for missing/blank title on POST and invalid payloads on PATCH",
+      "priority": 8,
+      "depends_on": [
+        "F004",
+        "F006"
+      ],
+      "source_requirement": "## Functional Requirements > ### 7. Validation and error handling",
+      "acceptance_criteria": [
+        "POST /todos with missing title returns 400 with JSON error",
+        "POST /todos with blank title returns 400 with JSON error",
+        "PATCH /todos/:id with empty title returns 400 with JSON error",
+        "PATCH /todos/:id with wrong data types returns 400 with JSON error",
+        "All error responses are JSON with descriptive messages",
+        "Unit test: validation.test.ts > 'POST /todos rejects missing title' verifies validation",
+        "Unit test: validation.test.ts > 'PATCH /todos/:id rejects invalid payload' verifies validation",
+        "Build passes (npm run build)",
+        "Tests pass (npm test)"
+      ],
+      "verification_steps": [
+        "npm run build",
+        "npm test"
+      ],
+      "status": "complete",
+      "attempts": 1,
+      "last_error": null,
+      "notes": "Depends on F006 because PATCH validation tests need the update endpoint.",
+      "related_files": [
+        "src/routes/todos.ts",
+        "tests/validation.test.ts"
+      ]
+    }
+  ]
+}

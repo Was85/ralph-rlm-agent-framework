@@ -1,0 +1,32 @@
+{
+  "feature_id": "F003",
+  "goal": "Define a TodoItem interface and an in-memory store with add, getAll, and getById helpers.",
+  "scope_summary": "Create src/store.ts exporting a TodoItem interface and a TodoStore class backed by a Map. The store's add method generates an id, defaults completed to false, and stamps createdAt/updatedAt. Add unit tests in tests/store.test.ts covering the two required test cases plus getById.",
+  "planned_changes": [
+    "Create src/store.ts with TodoItem interface and TodoStore class (add, getAll, getById)",
+    "Create tests/store.test.ts with unit tests for model shape and insertion-order retrieval"
+  ],
+  "files_to_touch": [
+    "src/store.ts",
+    "tests/store.test.ts"
+  ],
+  "commands_to_run": [
+    "npm run build",
+    "npm test"
+  ],
+  "acceptance_checks": [
+    "TodoItem type has id, title, completed, createdAt, and updatedAt fields",
+    "In-memory store supports add, getAll, and getById operations",
+    "New items default completed to false and set createdAt/updatedAt",
+    "Unit test: store.test.ts > 'add returns an item with all required fields' verifies model shape",
+    "Unit test: store.test.ts > 'getAll returns items in insertion order' verifies ordering",
+    "Build passes (npm run build)",
+    "Tests pass (npm test)"
+  ],
+  "commit_message": "feat(F003): add TodoItem interface and in-memory store with unit tests",
+  "risks": [
+    "ID generation strategy (crypto.randomUUID vs counter) — randomUUID requires Node 19+ or polyfill; counter is simpler but non-standard for APIs",
+    "Map iteration order is insertion-order in ES2015+, but the getAll test depends on this guarantee — must verify the implementation preserves it",
+    "createdAt/updatedAt use Date.now() or new Date() — tests that check exact timestamps may be flaky without freezing time"
+  ]
+}

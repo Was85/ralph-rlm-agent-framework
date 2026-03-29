@@ -23,6 +23,7 @@ Go through EVERY feature in the list and apply ALL of these rules:
 ### 1. MAKE FEATURES ATOMIC
 
 Each feature must be implementable in a single coding session touching 2-4 files max.
+Bootstrap/setup stories for a greenfield Node/TypeScript app may use up to 6 files when they need `.gitignore`, `package.json`, `tsconfig*.json`, one minimal runtime entry file such as `src/index.ts`, and one focused test file.
 
 BAD: "Implement bookmark CRUD operations" (too big — that's 4 endpoints)
 GOOD: Split into separate features:
@@ -33,7 +34,7 @@ GOOD: Split into separate features:
 
 ### 2. MAKE ACCEPTANCE CRITERIA EXPLICIT AND TESTABLE
 
-Every feature must have 2-5 acceptance criteria. Each criterion must describe an observable, testable behavior.
+Every feature must have 2-10 acceptance criteria. Each criterion must describe an observable, testable behavior.
 
 BAD criteria:
   - "Search should work"
@@ -78,8 +79,15 @@ GOOD: "Create GET /api/bookmarks?q={term} endpoint in src/routes/bookmarks.js th
 3. Keep feature IDs stable when sharpening existing features (don't rename F001).
 4. When splitting a feature, create new IDs (F001a, F001b) and remove the original.
 5. All new/split features must have status "pending" and attempts 0.
-6. Recalculate the stats block to match the features array.
-7. Write the updated feature_list.json back to disk.
-8. Every feature must have acceptance_criteria (array of strings, 2-5 items).
-9. Every feature must have a precise description (not vague, not broad).
-10. The total feature count may increase — that is expected and correct. More small features is better than fewer big ones.
+6. Normal features should stay within 1-4 `related_files`; only Node/TypeScript bootstrap/setup stories may stretch to 5-6 when the extra files are essential startup scaffolding.
+7. Recalculate the stats block to match the features array.
+8. Write the updated feature_list.json back to disk.
+9. Every feature must have acceptance_criteria (array of strings, 2-10 items).
+10. Every feature must have a precise description (not vague, not broad).
+11. The total feature count may increase — that is expected and correct. More small features is better than fewer big ones.
+12. Every feature must include `priority`, `depends_on`, `source_requirement`, `verification_steps`, and `related_files`.
+13. `related_files` must stay at 1-4 files max for normal stories, or 1-6 files max for essential Node/TypeScript bootstrap/setup stories, and at least one of those files must be a test file for the story.
+14. If `config.build_command` exists, every feature must include a build-passes acceptance criterion and the exact build command in `verification_steps`.
+15. If `config.test_command` exists, every feature must include a tests-pass acceptance criterion and the exact test command in `verification_steps`.
+16. Non-UI stories must explicitly mention unit-test evidence (for example Vitest, Jest, xUnit, pytest, NUnit, JUnit, or the words "unit test").
+17. UI stories must explicitly mention Playwright or another E2E/browser test in acceptance criteria or verification steps.

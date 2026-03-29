@@ -13,6 +13,7 @@ export interface MergeResult {
   success: boolean;
   conflicted: boolean;
   error?: string;
+  mergeCommit?: string;
 }
 
 export interface WorktreeManager {
@@ -20,14 +21,16 @@ export interface WorktreeManager {
   merge(worktree: Worktree, cwd: string): Promise<MergeResult>;
   cleanup(worktree: Worktree, cwd: string): Promise<void>;
   cleanupAll(cwd: string): Promise<void>;
+  revertLastMerge(cwd: string, mergeCommit: string): Promise<void>;
 }
 
 const WORKTREE_DIR = '.claude/worktrees';
 
 export class WorktreeManagerImpl implements WorktreeManager {
   async create(featureId: string, cwd: string): Promise<Worktree> {
-    const name = `ralph-${featureId}`;
-    const branch = `ralph/${featureId}`;
+    const suffix = createAttemptSuffix();
+    const name = `ralph-${featureId}-${suffix}`;
+    const branch = `ralph/${featureId}--${suffix}`;
     const worktreePath = path.join(cwd, WORKTREE_DIR, name);
 
     await gitExec(['worktree', 'add', worktreePath, '-b', branch], cwd);
@@ -36,19 +39,15 @@ export class WorktreeManagerImpl implements WorktreeManager {
   }
 
   async merge(worktree: Worktree, cwd: string): Promise<MergeResult> {
-    // Ensure a clean working tree before merge. Previous merge conflicts,
-    // verification runs (vitest cache), or rebase failures can leave dirty state.
-    await this.ensureCleanWorkingTree(cwd);
+    const mainBranch = await this.getCurrentBranch(cwd);
+    await this.abortPendingGitOperations(cwd);
+    await this.abortPendingGitOperations(worktree.path);
 
-    // Try rebase first to reduce merge conflicts.
-    // Rebase replays the branch's commits on top of current HEAD,
-    // so the subsequent merge is a fast-forward or trivial.
+    // Rebase in the feature worktree so the main checkout stays on the main branch.
     try {
-      await gitExec(['rebase', 'HEAD', worktree.branch], cwd);
+      await gitExec(['rebase', mainBranch], worktree.path);
     } catch {
-      // Rebase failed — abort and ensure clean state
-      try { await gitExec(['rebase', '--abort'], cwd); } catch { /* ignore */ }
-      await this.ensureCleanWorkingTree(cwd);
+      try { await gitExec(['rebase', '--abort'], worktree.path); } catch { /* ignore */ }
     }
 
     try {
@@ -56,15 +55,14 @@ export class WorktreeManagerImpl implements WorktreeManager {
         ['merge', worktree.branch, '--no-ff', '--no-edit', '-m', `feat: merge ${worktree.featureId}`],
         cwd,
       );
-      return { success: true, conflicted: false };
+      const { stdout: mergeCommit } = await gitExec(['rev-parse', 'HEAD'], cwd);
+      return { success: true, conflicted: false, mergeCommit: mergeCommit.trim() };
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       const stdout = (err as { stdout?: string }).stdout ?? '';
       const combined = `${errorMsg}\n${stdout}`;
 
-      // Abort merge and reset to clean state
       try { await gitExec(['merge', '--abort'], cwd); } catch { /* ignore */ }
-      await this.ensureCleanWorkingTree(cwd);
 
       const conflicted = combined.includes('CONFLICT')
         || combined.includes('Automatic merge failed')
@@ -75,24 +73,17 @@ export class WorktreeManagerImpl implements WorktreeManager {
   }
 
   /**
-   * Ensures the working tree is completely clean — no dirty files, no
-   * unmerged state. Uses git reset + clean as a nuclear option when needed.
+   * Best-effort cleanup of interrupted merge/rebase state without touching
+   * regular user changes in the working tree.
    */
-  private async ensureCleanWorkingTree(cwd: string): Promise<void> {
-    try {
-      const { stdout } = await gitExec(['status', '--porcelain'], cwd);
-      if (!stdout.trim()) return;
+  private async abortPendingGitOperations(cwd: string): Promise<void> {
+    try { await gitExec(['merge', '--abort'], cwd); } catch { /* ignore */ }
+    try { await gitExec(['rebase', '--abort'], cwd); } catch { /* ignore */ }
+  }
 
-      // Try stash first (preserves changes for potential recovery)
-      try {
-        await gitExec(['stash', 'push', '-m', 'ralph-auto-cleanup', '--include-untracked'], cwd);
-        return;
-      } catch { /* stash can fail on unmerged files */ }
-
-      // Nuclear option: reset + clean
-      await gitExec(['reset', '--hard', 'HEAD'], cwd);
-      await gitExec(['clean', '-fd'], cwd);
-    } catch { /* ignore — best effort */ }
+  private async getCurrentBranch(cwd: string): Promise<string> {
+    const { stdout } = await gitExec(['branch', '--show-current'], cwd);
+    return stdout.trim() || 'HEAD';
   }
 
   async cleanup(worktree: Worktree, cwd: string): Promise<void> {
@@ -154,7 +145,11 @@ export class WorktreeManagerImpl implements WorktreeManager {
   /**
    * Reverts the last merge commit (used when verification fails after merge).
    */
-  async revertLastMerge(cwd: string): Promise<void> {
-    await gitExec(['reset', '--hard', 'HEAD~1'], cwd);
+  async revertLastMerge(cwd: string, mergeCommit: string): Promise<void> {
+    await gitExec(['revert', '-m', '1', '--no-edit', mergeCommit], cwd);
   }
+}
+
+function createAttemptSuffix(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }

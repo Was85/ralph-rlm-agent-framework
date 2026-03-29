@@ -1,108 +1,154 @@
-import { mkdtemp, rm, mkdir, writeFile, readFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { TeamOrchestrator } from '../../src/team/team-orchestrator.js';
-import type { Runner, RunnerConfig, RunnerType, FeatureList } from '../../src/config/types.js';
-import type { WorktreeManager, Worktree, MergeResult } from '../../src/team/worktree-manager.js';
-import { DEFAULT_CONFIG, PROGRESS_FILE } from '../../src/config/defaults.js';
+import type { RalphConfig, Runner, FeatureList } from '../../src/config/types.js';
+import { DEFAULT_CONFIG, PROGRESS_FILE, RALPH_DIR, RALPH_FEATURES_DIR } from '../../src/config/defaults.js';
 import { createFeatureList } from '../fixtures/feature-list-factory.js';
-import type { RalphConfig } from '../../src/config/types.js';
+import type { FeatureHarnessResult } from '../../src/core/harness-runner.js';
+import type { MergeResult, Worktree, WorktreeManager } from '../../src/team/worktree-manager.js';
+import { recalculateStats } from '../../src/core/stats.js';
 
-// Mock runPreflight so tests don't require the actual CLI binary on the system.
+const harnessState = vi.hoisted(() => ({
+  queue: [] as FeatureHarnessResult[],
+  invocations: [] as Array<{ cwd: string; featureId: string }>,
+  onInvoke: undefined as
+    | undefined
+    | ((options: { cwd: string; feature: { id: string } }) => Promise<void>),
+}));
+
+const execState = vi.hoisted(() => ({
+  commands: [] as string[],
+  failCommands: new Set<string>(),
+  gitCalls: [] as Array<{ args: string[]; cwd: string }>,
+  changedFilesByCommit: new Map<string, string[]>(),
+}));
+
 vi.mock('../../src/core/preflight.js', () => ({
   runPreflight: vi.fn().mockResolvedValue(true),
 }));
 
-// --- Mock WorktreeManager ---
+vi.mock('../../src/core/harness-runner.js', () => ({
+  runFeatureHarness: vi.fn(async (options: { cwd: string; feature: { id: string } }) => {
+    harnessState.invocations.push({ cwd: options.cwd, featureId: options.feature.id });
+    if (harnessState.onInvoke) {
+      await harnessState.onInvoke(options);
+    }
+    return harnessState.queue.shift() ?? { outcome: 'approved', summary: 'approved' };
+  }),
+}));
+
+vi.mock('../../src/core/safe-exec.js', () => ({
+  gitExec: vi.fn(async (args: string[], cwd: string) => {
+    execState.gitCalls.push({ args: [...args], cwd });
+    if (args[0] === 'status' && args[1] === '--porcelain') {
+      return { stdout: '', stderr: '' };
+    }
+    if (args[0] === 'show' && args[1] === '--pretty=format:') {
+      const commit = args.at(-1) ?? '';
+      return { stdout: (execState.changedFilesByCommit.get(commit) ?? []).join('\n'), stderr: '' };
+    }
+    return { stdout: '', stderr: '' };
+  }),
+  safeExecCommand: vi.fn(async (command: string) => {
+    execState.commands.push(command);
+    if (execState.failCommands.has(command)) {
+      throw new Error(`command failed: ${command}`);
+    }
+    return { stdout: '', stderr: '' };
+  }),
+  sanitizeCommitMessage: vi.fn((message: string) => message),
+}));
+
 class MockWorktreeManager implements WorktreeManager {
   created: string[] = [];
-  merged: string[] = [];
-  cleanedUp: string[] = [];
+  cleaned: string[] = [];
   cleanupAllCalled = false;
+  merged: string[] = [];
+  reverted: Array<{ cwd: string; mergeCommit: string }> = [];
   mergeResults = new Map<string, MergeResult>();
-  revertCalled = false;
 
   async create(featureId: string, cwd: string): Promise<Worktree> {
     this.created.push(featureId);
-    // Use the tmpDir itself as the worktree path (simplifies testing)
-    const wtPath = path.join(cwd, '.claude', 'worktrees', `ralph-${featureId}`);
-    await mkdir(wtPath, { recursive: true });
+    const worktreePath = path.join(cwd, '.claude', 'worktrees', `ralph-${featureId}`);
+    await mkdir(worktreePath, { recursive: true });
     return {
       name: `ralph-${featureId}`,
-      path: wtPath,
+      path: worktreePath,
       branch: `ralph/${featureId}`,
       featureId,
     };
   }
 
-  async merge(worktree: Worktree, _cwd: string): Promise<MergeResult> {
+  async merge(worktree: Worktree, cwd: string): Promise<MergeResult> {
     this.merged.push(worktree.featureId);
-    return this.mergeResults.get(worktree.featureId) ?? { success: true, conflicted: false };
+    const sourceDir = path.join(worktree.path, RALPH_DIR, RALPH_FEATURES_DIR, worktree.featureId);
+    const targetDir = path.join(cwd, RALPH_DIR, RALPH_FEATURES_DIR, worktree.featureId);
+    if (existsSync(sourceDir)) {
+      await mkdir(path.dirname(targetDir), { recursive: true });
+      await cp(sourceDir, targetDir, { recursive: true, force: true });
+    }
+
+    return this.mergeResults.get(worktree.featureId)
+      ?? { success: true, conflicted: false, mergeCommit: `merge-${worktree.featureId}` };
   }
 
-  async cleanup(worktree: Worktree, _cwd: string): Promise<void> {
-    this.cleanedUp.push(worktree.featureId);
+  async cleanup(worktree: Worktree): Promise<void> {
+    this.cleaned.push(worktree.featureId);
   }
 
-  async cleanupAll(_cwd: string): Promise<void> {
+  async cleanupAll(): Promise<void> {
     this.cleanupAllCalled = true;
   }
 
-  async revertLastMerge(_cwd: string): Promise<void> {
-    this.revertCalled = true;
-  }
-}
-
-// --- Mock Runner ---
-class MockRunner implements Runner {
-  readonly type: RunnerType = 'claude';
-  invocations: Array<{ prompt: string; config: RunnerConfig }> = [];
-  onInvoke?: (prompt: string, config: RunnerConfig) => Promise<void>;
-
-  async invoke(prompt: string, config: RunnerConfig): Promise<number> {
-    this.invocations.push({ prompt, config });
-    if (this.onInvoke) await this.onInvoke(prompt, config);
-    return 0;
-  }
-
-  async checkInstalled(): Promise<boolean> {
-    return true;
+  async revertLastMerge(cwd: string, mergeCommit: string): Promise<void> {
+    this.reverted.push({ cwd, mergeCommit });
   }
 }
 
 function makeConfig(overrides: Partial<RalphConfig> = {}): RalphConfig {
-  return { ...DEFAULT_CONFIG, sleepBetween: 0, teammates: 3, ...overrides };
+  return { ...DEFAULT_CONFIG, sleepBetween: 0, teammates: 2, ...overrides };
 }
 
-async function setupEnv(tmpDir: string, promptsDir: string, data: FeatureList): Promise<void> {
+function createRunner(): Runner {
+  return {
+    type: 'claude',
+    async invoke(): Promise<number> {
+      return 0;
+    },
+    async checkInstalled(): Promise<boolean> {
+      return true;
+    },
+  };
+}
+
+async function setupEnv(tmpDir: string, data: FeatureList): Promise<void> {
   await mkdir(path.join(tmpDir, '.git'));
   await writeFile(path.join(tmpDir, 'feature_list.json'), JSON.stringify(data, null, 2), 'utf-8');
-  await writeFile(path.join(promptsDir, 'implementer.md'), 'Implement the feature', 'utf-8');
 }
 
-/**
- * Simulate agent completing a feature by updating the worktree's feature_list.json
- */
-async function simulateComplete(wtPath: string, featureId: string): Promise<void> {
-  const raw = await readFile(path.join(wtPath, 'feature_list.json'), 'utf-8');
-  const fl = JSON.parse(raw) as FeatureList;
-  const feature = fl.features.find(f => f.id === featureId);
-  if (feature) feature.status = 'complete';
-  await writeFile(path.join(wtPath, 'feature_list.json'), JSON.stringify(fl, null, 2), 'utf-8');
+async function readFeatureList(tmpDir: string): Promise<FeatureList> {
+  const raw = await readFile(path.join(tmpDir, 'feature_list.json'), 'utf-8');
+  return JSON.parse(raw) as FeatureList;
 }
 
 describe('TeamOrchestrator', () => {
   let tmpDir: string;
-  let promptsDir: string;
-  let runner: MockRunner;
-  let wtManager: MockWorktreeManager;
+  let runner: Runner;
+  let worktreeManager: MockWorktreeManager;
 
   beforeEach(async () => {
     tmpDir = await mkdtemp(path.join(tmpdir(), 'team-orch-'));
-    promptsDir = path.join(tmpDir, 'prompts');
-    await mkdir(promptsDir, { recursive: true });
-    runner = new MockRunner();
-    wtManager = new MockWorktreeManager();
+    runner = createRunner();
+    worktreeManager = new MockWorktreeManager();
+    harnessState.queue = [];
+    harnessState.invocations = [];
+    harnessState.onInvoke = undefined;
+    execState.commands = [];
+    execState.failCommands.clear();
+    execState.gitCalls = [];
+    execState.changedFilesByCommit.clear();
   });
 
   afterEach(async () => {
@@ -110,279 +156,182 @@ describe('TeamOrchestrator', () => {
   });
 
   it('returns 0 when all features are already complete', async () => {
-    const data = createFeatureList({ pending: 0, complete: 3 });
-    await setupEnv(tmpDir, promptsDir, data);
+    await setupEnv(tmpDir, createFeatureList({ pending: 0, complete: 3 }));
 
-    const orch = new TeamOrchestrator(runner, makeConfig(), promptsDir, tmpDir, wtManager);
-    const result = await orch.run();
+    const orchestrator = new TeamOrchestrator(runner, makeConfig(), tmpDir, tmpDir, worktreeManager);
+    const result = await orchestrator.run();
 
     expect(result).toBe(0);
-    expect(runner.invocations).toHaveLength(0);
+    expect(harnessState.invocations).toHaveLength(0);
+    expect(worktreeManager.cleanupAllCalled).toBe(true);
   });
 
-  it('returns 2 when all remaining features are blocked', async () => {
-    const data = createFeatureList({ pending: 0, complete: 1, blocked: 2 });
-    await setupEnv(tmpDir, promptsDir, data);
+  it('returns 2 when only blocked features remain', async () => {
+    await setupEnv(tmpDir, createFeatureList({ pending: 0, complete: 1, blocked: 2 }));
 
-    const orch = new TeamOrchestrator(runner, makeConfig(), promptsDir, tmpDir, wtManager);
-    const result = await orch.run();
+    const orchestrator = new TeamOrchestrator(runner, makeConfig(), tmpDir, tmpDir, worktreeManager);
+    const result = await orchestrator.run();
 
     expect(result).toBe(2);
-    expect(runner.invocations).toHaveLength(0);
+    expect(harnessState.invocations).toHaveLength(0);
   });
 
-  it('returns 1 if preflight fails (no .git)', async () => {
-    const { runPreflight } = await import('../../src/core/preflight.js');
-    vi.mocked(runPreflight).mockResolvedValueOnce(false);
+  it('returns 2 when team mode has no ready work because pending features are deadlocked', async () => {
+    const data = createFeatureList({ pending: 1, blocked: 1 });
+    data.features[0]!.status = 'blocked';
+    data.features[0]!.attempts = 5;
+    data.features[0]!.last_error = 'Blocked upstream';
+    data.features[1]!.status = 'pending';
+    data.features[1]!.depends_on = ['F001'];
+    recalculateStats(data);
+    await setupEnv(tmpDir, data);
 
-    const data = createFeatureList({ pending: 1 });
-    await writeFile(path.join(tmpDir, 'feature_list.json'), JSON.stringify(data, null, 2), 'utf-8');
-    await writeFile(path.join(promptsDir, 'implementer.md'), 'Implement', 'utf-8');
+    const orchestrator = new TeamOrchestrator(runner, makeConfig({ maxIterations: 5 }), tmpDir, tmpDir, worktreeManager);
+    const result = await orchestrator.run();
 
-    const orch = new TeamOrchestrator(runner, makeConfig(), promptsDir, tmpDir, wtManager);
-    const result = await orch.run();
-
-    expect(result).toBe(1);
+    expect(result).toBe(2);
+    expect(harnessState.invocations).toHaveLength(0);
+    const runtimeSession = JSON.parse(await readFile(path.join(tmpDir, '.ralph', 'runtime', 'session-state.json'), 'utf-8'));
+    expect(runtimeSession.status).toBe('blocked');
+    expect(runtimeSession.last_summary).toContain('No ready team work remains.');
   });
 
-  it('cleans up orphaned worktrees on startup', async () => {
-    const data = createFeatureList({ pending: 0, complete: 1 });
-    await setupEnv(tmpDir, promptsDir, data);
+  it('dispatches multiple ready features without hiding the rest of the backlog', async () => {
+    await setupEnv(tmpDir, createFeatureList({ pending: 3 }));
+    const actionableCounts: number[] = [];
 
-    const orch = new TeamOrchestrator(runner, makeConfig(), promptsDir, tmpDir, wtManager);
-    await orch.run();
-
-    expect(wtManager.cleanupAllCalled).toBe(true);
-  });
-
-  it('creates worktrees for each feature in the batch', async () => {
-    const data = createFeatureList({ pending: 2 });
-    await setupEnv(tmpDir, promptsDir, data);
-
-    runner.onInvoke = async (_prompt, config) => {
-      // Simulate agent completing the feature in the worktree
-      if (config.cwd) {
-        const raw = await readFile(path.join(config.cwd, 'feature_list.json'), 'utf-8');
-        const fl = JSON.parse(raw) as FeatureList;
-        const inProgress = fl.features.find(f => f.status === 'in_progress');
-        if (inProgress) {
-          inProgress.status = 'complete';
-          await writeFile(path.join(config.cwd, 'feature_list.json'), JSON.stringify(fl, null, 2), 'utf-8');
-        }
-      }
+    harnessState.queue = [
+      { outcome: 'approved', summary: 'F001 approved' },
+      { outcome: 'approved', summary: 'F002 approved' },
+      { outcome: 'approved', summary: 'F003 approved' },
+    ];
+    harnessState.onInvoke = async ({ cwd, feature }) => {
+      const raw = await readFile(path.join(cwd, 'feature_list.json'), 'utf-8');
+      const featureList = JSON.parse(raw) as FeatureList;
+      actionableCounts.push(featureList.features.filter(f => f.status === 'pending' || f.status === 'in_progress').length);
+      const featureDir = path.join(cwd, RALPH_DIR, RALPH_FEATURES_DIR, feature.id);
+      await mkdir(featureDir, { recursive: true });
+      await writeFile(path.join(featureDir, 'verification-report.json'), '{}', 'utf-8');
     };
 
-    const orch = new TeamOrchestrator(runner, makeConfig({ maxIterations: 5 }), promptsDir, tmpDir, wtManager);
-    await orch.run();
-
-    // Should have created worktrees
-    expect(wtManager.created.length).toBeGreaterThanOrEqual(1);
-  });
-
-  it('dispatches agents with cwd set to worktree path', async () => {
-    const data = createFeatureList({ pending: 1 });
-    await setupEnv(tmpDir, promptsDir, data);
-
-    runner.onInvoke = async (_prompt, config) => {
-      if (config.cwd) {
-        const raw = await readFile(path.join(config.cwd, 'feature_list.json'), 'utf-8');
-        const fl = JSON.parse(raw) as FeatureList;
-        const target = fl.features.find(f => f.status === 'in_progress');
-        if (target) {
-          target.status = 'complete';
-          await writeFile(path.join(config.cwd, 'feature_list.json'), JSON.stringify(fl, null, 2), 'utf-8');
-        }
-      }
-    };
-
-    const orch = new TeamOrchestrator(runner, makeConfig({ maxIterations: 5 }), promptsDir, tmpDir, wtManager);
-    await orch.run();
-
-    expect(runner.invocations.length).toBeGreaterThanOrEqual(1);
-    const firstInvocation = runner.invocations[0]!;
-    expect(firstInvocation.config.cwd).toBeDefined();
-    expect(firstInvocation.config.cwd).toContain('.claude');
-  });
-
-  it('hides other features in worktree feature_list.json', async () => {
-    const data = createFeatureList({ pending: 2 });
-    await setupEnv(tmpDir, promptsDir, data);
-
-    let worktreeFeatureCount = 0;
-    runner.onInvoke = async (_prompt, config) => {
-      if (config.cwd) {
-        const raw = await readFile(path.join(config.cwd, 'feature_list.json'), 'utf-8');
-        const fl = JSON.parse(raw) as FeatureList;
-        // Count how many features are visible (should only be 1 pending/in_progress)
-        const actionable = fl.features.filter(f => f.status === 'pending' || f.status === 'in_progress');
-        worktreeFeatureCount = actionable.length;
-        // Complete the feature
-        const target = fl.features.find(f => f.status === 'in_progress');
-        if (target) {
-          target.status = 'complete';
-          await writeFile(path.join(config.cwd, 'feature_list.json'), JSON.stringify(fl, null, 2), 'utf-8');
-        }
-      }
-    };
-
-    const orch = new TeamOrchestrator(runner, makeConfig({ maxIterations: 5, teammates: 1 }), promptsDir, tmpDir, wtManager);
-    await orch.run();
-
-    // Only 1 actionable feature should be visible in worktree
-    expect(worktreeFeatureCount).toBe(1);
-  });
-
-  it('cleans up worktrees after batch completes', async () => {
-    const data = createFeatureList({ pending: 1 });
-    await setupEnv(tmpDir, promptsDir, data);
-
-    runner.onInvoke = async (_prompt, config) => {
-      if (config.cwd) {
-        const raw = await readFile(path.join(config.cwd, 'feature_list.json'), 'utf-8');
-        const fl = JSON.parse(raw) as FeatureList;
-        const target = fl.features.find(f => f.status === 'in_progress');
-        if (target) {
-          target.status = 'complete';
-          await writeFile(path.join(config.cwd, 'feature_list.json'), JSON.stringify(fl, null, 2), 'utf-8');
-        }
-      }
-    };
-
-    const orch = new TeamOrchestrator(runner, makeConfig({ maxIterations: 5 }), promptsDir, tmpDir, wtManager);
-    await orch.run();
-
-    expect(wtManager.cleanedUp.length).toBeGreaterThanOrEqual(1);
-  });
-
-  it('increments attempts and blocks feature after max attempts', async () => {
-    const data = createFeatureList({
-      pending: 1,
-      config: { max_attempts_per_feature: 2 },
-    });
-    await setupEnv(tmpDir, promptsDir, data);
-
-    // Agent never completes the feature
-    const orch = new TeamOrchestrator(runner, makeConfig({ maxIterations: 5 }), promptsDir, tmpDir, wtManager);
-    const result = await orch.run();
-
-    expect(result).toBe(2); // blocked
-    const raw = await readFile(path.join(tmpDir, 'feature_list.json'), 'utf-8');
-    const final = JSON.parse(raw) as FeatureList;
-    const feature = final.features[0]!;
-    expect(feature.status).toBe('blocked');
-    expect(feature.attempts).toBe(2);
-  });
-
-  it('returns 1 when max iterations reached', async () => {
-    const data = createFeatureList({ pending: 3 });
-    await setupEnv(tmpDir, promptsDir, data);
-
-    // Agent never completes
-    const orch = new TeamOrchestrator(runner, makeConfig({ maxIterations: 2 }), promptsDir, tmpDir, wtManager);
-    const result = await orch.run();
-
-    expect(result).toBe(1);
-  });
-
-  it('handles merge conflicts by reverting feature', async () => {
-    const data = createFeatureList({ pending: 1 });
-    await setupEnv(tmpDir, promptsDir, data);
-
-    // Agent completes in worktree
-    runner.onInvoke = async (_prompt, config) => {
-      if (config.cwd) {
-        const raw = await readFile(path.join(config.cwd, 'feature_list.json'), 'utf-8');
-        const fl = JSON.parse(raw) as FeatureList;
-        const target = fl.features.find(f => f.status === 'in_progress');
-        if (target) {
-          target.status = 'complete';
-          await writeFile(path.join(config.cwd, 'feature_list.json'), JSON.stringify(fl, null, 2), 'utf-8');
-        }
-      }
-    };
-
-    // But merge conflicts
-    wtManager.mergeResults.set('F001', { success: false, conflicted: true, error: 'CONFLICT' });
-
-    const orch = new TeamOrchestrator(runner, makeConfig({ maxIterations: 2 }), promptsDir, tmpDir, wtManager);
-    await orch.run();
-
-    // Feature should be reverted to in_progress or blocked
-    const raw = await readFile(path.join(tmpDir, 'feature_list.json'), 'utf-8');
-    const final = JSON.parse(raw) as FeatureList;
-    const feature = final.features[0]!;
-    expect(feature.status).not.toBe('complete');
-    expect(feature.attempts).toBeGreaterThan(0);
-  });
-
-  it('passes feature-specific prompt to runner', async () => {
-    const data = createFeatureList({ pending: 1 });
-    await setupEnv(tmpDir, promptsDir, data);
-
-    runner.onInvoke = async (_prompt, config) => {
-      if (config.cwd) {
-        const raw = await readFile(path.join(config.cwd, 'feature_list.json'), 'utf-8');
-        const fl = JSON.parse(raw) as FeatureList;
-        const target = fl.features.find(f => f.status === 'in_progress');
-        if (target) {
-          target.status = 'complete';
-          await writeFile(path.join(config.cwd, 'feature_list.json'), JSON.stringify(fl, null, 2), 'utf-8');
-        }
-      }
-    };
-
-    const orch = new TeamOrchestrator(runner, makeConfig({ maxIterations: 5 }), promptsDir, tmpDir, wtManager);
-    await orch.run();
-
-    const prompt = runner.invocations[0]!.prompt;
-    expect(prompt).toContain('F001');
-    expect(prompt).toContain('implementer.md');
-    expect(prompt).toContain('ONLY');
-    expect(prompt).toContain('git commit');
-  });
-
-  it('logs progress to progress file', async () => {
-    const data = createFeatureList({ pending: 1 });
-    await setupEnv(tmpDir, promptsDir, data);
-
-    // Agent doesn't complete — logs failure
-    const orch = new TeamOrchestrator(runner, makeConfig({ maxIterations: 1 }), promptsDir, tmpDir, wtManager);
-    await orch.run();
-
-    const progressPath = path.join(tmpDir, PROGRESS_FILE);
-    const progress = await readFile(progressPath, 'utf-8');
-    expect(progress).toContain('F001');
-  });
-
-  it('respects depends_on ordering across levels', async () => {
-    const data = createFeatureList({
-      pending: 2,
-      dependencies: [
-        { featureId: 'F001', dependsOn: [] },
-        { featureId: 'F002', dependsOn: ['F001'] },
-      ],
-    });
-    await setupEnv(tmpDir, promptsDir, data);
-
-    const completedOrder: string[] = [];
-    runner.onInvoke = async (_prompt, config) => {
-      if (config.cwd) {
-        const raw = await readFile(path.join(config.cwd, 'feature_list.json'), 'utf-8');
-        const fl = JSON.parse(raw) as FeatureList;
-        const target = fl.features.find(f => f.status === 'in_progress');
-        if (target) {
-          completedOrder.push(target.id);
-          target.status = 'complete';
-          await writeFile(path.join(config.cwd, 'feature_list.json'), JSON.stringify(fl, null, 2), 'utf-8');
-        }
-      }
-    };
-
-    const orch = new TeamOrchestrator(runner, makeConfig({ maxIterations: 5 }), promptsDir, tmpDir, wtManager);
-    const result = await orch.run();
+    const orchestrator = new TeamOrchestrator(runner, makeConfig({ maxIterations: 5 }), tmpDir, tmpDir, worktreeManager);
+    const result = await orchestrator.run();
 
     expect(result).toBe(0);
-    // F001 must be completed before F002
-    expect(completedOrder.indexOf('F001')).toBeLessThan(completedOrder.indexOf('F002'));
+    expect(harnessState.invocations.map(invocation => invocation.featureId)).toEqual(['F001', 'F002', 'F003']);
+    expect(actionableCounts).toEqual([3, 3, 1]);
+    const final = await readFeatureList(tmpDir);
+    expect(final.stats.complete).toBe(3);
+    expect(final.stats.pending).toBe(0);
+    const runtimeSession = JSON.parse(await readFile(path.join(tmpDir, '.ralph', 'runtime', 'session-state.json'), 'utf-8'));
+    expect(runtimeSession.status).toBe('completed');
+    const featureRuntime = JSON.parse(await readFile(path.join(tmpDir, '.ralph', 'runtime', 'features', 'F002.json'), 'utf-8'));
+    expect(featureRuntime.status).toBe('completed');
+  });
+
+  it('copies harness artifacts back and blocks after max retries', async () => {
+    await setupEnv(
+      tmpDir,
+      createFeatureList({
+        pending: 1,
+        config: { max_attempts_per_feature: 2 },
+      }),
+    );
+
+    harnessState.queue = [
+      { outcome: 'retry', summary: 'contract too large' },
+      { outcome: 'retry', summary: 'contract too large' },
+    ];
+    harnessState.onInvoke = async ({ cwd, feature }) => {
+      const featureDir = path.join(cwd, RALPH_DIR, RALPH_FEATURES_DIR, feature.id);
+      await mkdir(featureDir, { recursive: true });
+      await writeFile(path.join(featureDir, 'contract-review.json'), '{"feature_id":"F001"}', 'utf-8');
+    };
+
+    const orchestrator = new TeamOrchestrator(runner, makeConfig({ maxIterations: 3 }), tmpDir, tmpDir, worktreeManager);
+    const result = await orchestrator.run();
+
+    expect(result).toBe(2);
+    const final = await readFeatureList(tmpDir);
+    expect(final.features[0]?.status).toBe('blocked');
+    expect(final.features[0]?.attempts).toBe(2);
+    expect(existsSync(path.join(tmpDir, RALPH_DIR, RALPH_FEATURES_DIR, 'F001', 'contract-review.json'))).toBe(true);
+    const featureRuntime = JSON.parse(await readFile(path.join(tmpDir, '.ralph', 'runtime', 'features', 'F001.json'), 'utf-8'));
+    expect(featureRuntime.status).toBe('blocked');
+  });
+
+  it('respects dependency levels even when multiple teammates are available', async () => {
+    await setupEnv(
+      tmpDir,
+      createFeatureList({
+        pending: 2,
+        dependencies: [
+          { featureId: 'F001', dependsOn: [] },
+          { featureId: 'F002', dependsOn: ['F001'] },
+        ],
+      }),
+    );
+    harnessState.queue = [
+      { outcome: 'approved', summary: 'F001 approved' },
+      { outcome: 'approved', summary: 'F002 approved' },
+    ];
+
+    const orchestrator = new TeamOrchestrator(runner, makeConfig({ maxIterations: 5, teammates: 2 }), tmpDir, tmpDir, worktreeManager);
+    const result = await orchestrator.run();
+
+    expect(result).toBe(0);
+    expect(harnessState.invocations.map(invocation => invocation.featureId)).toEqual(['F001', 'F002']);
+    expect(worktreeManager.created).toEqual(['F001', 'F002']);
+  });
+
+  it('increments attempts on merge conflicts', async () => {
+    await setupEnv(
+      tmpDir,
+      createFeatureList({
+        pending: 1,
+        config: { max_attempts_per_feature: 1 },
+      }),
+    );
+    harnessState.queue = [{ outcome: 'approved', summary: 'ready' }];
+    worktreeManager.mergeResults.set('F001', { success: false, conflicted: true, error: 'CONFLICT' });
+
+    const orchestrator = new TeamOrchestrator(runner, makeConfig({ maxIterations: 2 }), tmpDir, tmpDir, worktreeManager);
+    const result = await orchestrator.run();
+
+    expect(result).toBe(2);
+    const final = await readFeatureList(tmpDir);
+    expect(final.features[0]?.status).toBe('blocked');
+    expect(final.features[0]?.attempts).toBe(1);
+    expect(final.features[0]?.last_error).toContain('CONFLICT');
+  });
+
+  it('reverts merged work when verification fails', async () => {
+    await setupEnv(
+      tmpDir,
+      createFeatureList({
+        pending: 1,
+        config: { test_command: 'npm test', max_attempts_per_feature: 1 },
+      }),
+    );
+    harnessState.queue = [{ outcome: 'approved', summary: 'ready' }];
+    execState.failCommands.add('npm test');
+    harnessState.onInvoke = async ({ cwd, feature }) => {
+      const featureDir = path.join(cwd, RALPH_DIR, RALPH_FEATURES_DIR, feature.id);
+      await mkdir(featureDir, { recursive: true });
+      await writeFile(path.join(featureDir, 'verification-report.json'), '{}', 'utf-8');
+    };
+
+    const orchestrator = new TeamOrchestrator(runner, makeConfig({ maxIterations: 2 }), tmpDir, tmpDir, worktreeManager);
+    const result = await orchestrator.run();
+
+    expect(result).toBe(2);
+    expect(worktreeManager.reverted).toEqual([{ cwd: tmpDir, mergeCommit: 'merge-F001' }]);
+    const final = await readFeatureList(tmpDir);
+    expect(final.features[0]?.status).toBe('blocked');
+    expect(final.features[0]?.last_error).toContain('Verification failed: npm test');
+    const progress = await readFile(path.join(tmpDir, PROGRESS_FILE), 'utf-8');
+    expect(progress).toContain('VERIFICATION FAILED for F001');
+    expect(existsSync(path.join(tmpDir, RALPH_DIR, RALPH_FEATURES_DIR, 'F001', 'verification-report.json'))).toBe(true);
+    expect(existsSync(path.join(tmpDir, RALPH_DIR, RALPH_FEATURES_DIR, 'F001', 'post-merge-verification.json'))).toBe(true);
   });
 });

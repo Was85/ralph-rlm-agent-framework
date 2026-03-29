@@ -1,0 +1,32 @@
+{
+  "feature_id": "F004",
+  "goal": "Add POST /todos and GET /todos endpoints for creating and listing todo items.",
+  "scope_summary": "Create a todos router in src/routes/todos.ts that instantiates a TodoStore and exposes POST /todos (creates an item, returns 201) and GET /todos (returns all items as JSON array in creation order). Wire the router into src/app.ts. Add tests in tests/todos.test.ts using supertest against createApp(), matching the existing health.test.ts pattern.",
+  "planned_changes": [
+    "Create src/routes/todos.ts with an Express Router that uses TodoStore to handle POST /todos and GET /todos",
+    "Update src/app.ts to import and mount the todos router",
+    "Create tests/todos.test.ts with POST /todos creates an item and GET /todos returns all items test cases using supertest"
+  ],
+  "files_to_touch": [
+    "src/routes/todos.ts",
+    "src/app.ts",
+    "tests/todos.test.ts"
+  ],
+  "commands_to_run": [
+    "npm run build",
+    "npm test"
+  ],
+  "acceptance_checks": [
+    "POST /todos with valid title creates an item and returns 201 with the created item (id, title, completed=false, createdAt, updatedAt)",
+    "GET /todos returns 200 with an array of all items in creation order",
+    "Unit test: todos.test.ts > POST /todos creates an item verifies creation",
+    "Unit test: todos.test.ts > GET /todos returns all items verifies listing",
+    "Build passes (npm run build)",
+    "Tests pass (npm test)"
+  ],
+  "commit_message": "feat(F004): add POST /todos and GET /todos endpoints with tests",
+  "risks": [
+    "TodoStore must be scoped per app instance (instantiated inside createApp or the router factory) so tests get isolated state — a module-level singleton would leak state between test cases",
+    "Date serialization: TodoItem.createdAt/updatedAt are Date objects — Express JSON serialization converts them to ISO strings, tests must assert against string format not Date instances"
+  ]
+}
