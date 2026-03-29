@@ -1,0 +1,30 @@
+{
+  "feature_id": "F002",
+  "goal": "Add a GET /health endpoint that returns HTTP 200 with a JSON body indicating the service is healthy.",
+  "scope_summary": "Register a GET /health route in the existing Express app factory (src/app.ts) that responds with 200 and a JSON object like {\"status\":\"healthy\"}. Add a new test file tests/health.test.ts using supertest and vitest to verify the status code and response body.",
+  "planned_changes": [
+    "Add GET /health route to the Express app in src/app.ts returning 200 with JSON {\"status\":\"healthy\"}",
+    "Create tests/health.test.ts with two tests: one asserting 200 status, one asserting JSON body contains a health status field"
+  ],
+  "files_to_touch": [
+    "src/app.ts",
+    "tests/health.test.ts"
+  ],
+  "commands_to_run": [
+    "npm run build",
+    "npm test"
+  ],
+  "acceptance_checks": [
+    "GET /health returns HTTP 200",
+    "Response body is JSON with a field indicating the service is healthy",
+    "Unit test: health.test.ts > 'GET /health returns 200' verifies status code",
+    "Unit test: health.test.ts > 'GET /health returns JSON health status' verifies body",
+    "Build passes (npm run build)",
+    "Tests pass (npm test)"
+  ],
+  "commit_message": "feat(F002): add GET /health endpoint returning 200 with JSON health status",
+  "risks": [
+    "supertest must be used with the app instance from createApp(), not a running server, to avoid port conflicts in tests",
+    "The health route must be registered before the app is returned from createApp() so tests and production both see it"
+  ]
+}

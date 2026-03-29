@@ -18,6 +18,9 @@
   "scripts": {
     "build": "tsc",
     "prepublishOnly": "node -e \"require('fs').copyFileSync('../README.md','README.md')\" && npm test && npm run build",
+    "smoke:todo": "node ./scripts/smoke-todo.mjs --mode all",
+    "smoke:todo:sequential": "node ./scripts/smoke-todo.mjs --mode sequential",
+    "smoke:todo:team": "node ./scripts/smoke-todo.mjs --mode team",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",

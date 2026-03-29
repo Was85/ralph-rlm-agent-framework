@@ -1,0 +1,28 @@
+{
+  "feature_id": "F003",
+  "description": "Define TodoItem interface and in-memory store with add, getAll, getById helpers",
+  "acceptance_criteria": [
+    "TodoItem type has id, title, completed, createdAt, and updatedAt fields",
+    "In-memory store supports add, getAll, and getById operations",
+    "New items default completed to false and set createdAt/updatedAt",
+    "Unit test: store.test.ts > 'add returns an item with all required fields' verifies model shape",
+    "Unit test: store.test.ts > 'getAll returns items in insertion order' verifies ordering",
+    "Build passes (npm run build)",
+    "Tests pass (npm test)"
+  ],
+  "verification_steps": [
+    "npm run build",
+    "npm test"
+  ],
+  "attempts": 1,
+  "priority": 3,
+  "last_error": "Implementation report commit SHA 75476b7 does not match HEAD 75476b75dab53344a2e6b31c64ac44a826c9ca1d",
+  "source_requirement": "## Functional Requirements > ### 3. Create and list todos",
+  "depends_on": [
+    "F001"
+  ],
+  "related_files": [
+    "src/store.ts",
+    "tests/store.test.ts"
+  ]
+}

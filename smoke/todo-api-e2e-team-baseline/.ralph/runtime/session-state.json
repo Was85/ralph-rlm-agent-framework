@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "run_id": "run-1774662531523-40220",
+  "process_id": 40220,
+  "mode": "sequential",
+  "status": "running",
+  "phase": "complete",
+  "started_at": "2026-03-28T01:48:51.523Z",
+  "updated_at": "2026-03-28T02:01:53.642Z",
+  "resumed_from_run_id": null,
+  "active_feature_ids": [],
+  "last_completed_feature_id": "F002",
+  "last_summary": "Feature F002 completed successfully.",
+  "recent_lessons": []
+}

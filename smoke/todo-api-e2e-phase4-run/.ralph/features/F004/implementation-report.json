@@ -1,0 +1,21 @@
+{
+  "feature_id": "F004",
+  "outcome": "ready_for_review",
+  "summary": "Added POST /todos and GET /todos endpoints via a todos router with TodoStore scoped per app instance. All tests pass.",
+  "commit_sha": "5daaec052ff19641cfb72d32ead4477cf5a32c98",
+  "changed_files": ["src/routes/todos.ts", "src/app.ts", "tests/todos.test.ts"],
+  "commands_run": ["npm run build", "npm test"],
+  "verification_results": [
+    {
+      "command": "npm run build",
+      "status": "pass",
+      "details": "tsc compiled with no errors."
+    },
+    {
+      "command": "npm test",
+      "status": "pass",
+      "details": "9 tests passed across 4 test files including 2 new todos tests."
+    }
+  ],
+  "notes": ["TodoStore instantiated inside createApp() to ensure test isolation per the contract risk note."]
+}

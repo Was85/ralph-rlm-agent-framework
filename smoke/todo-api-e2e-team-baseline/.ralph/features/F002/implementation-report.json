@@ -1,0 +1,30 @@
+{
+  "feature_id": "F002",
+  "outcome": "ready_for_review",
+  "summary": "Added GET /health route to src/app.ts returning 200 with {status:\"healthy\"}. Created tests/health.test.ts with two tests verifying status code and JSON body. Build and all tests pass.",
+  "commit_sha": "711a53d7b4e102de8bc1ba988eda4bd2c2bba833",
+  "changed_files": [
+    "src/app.ts",
+    "tests/health.test.ts"
+  ],
+  "commands_run": [
+    "npm run build",
+    "npm test"
+  ],
+  "verification_results": [
+    {
+      "command": "npm run build",
+      "status": "pass",
+      "details": "TypeScript compilation succeeded with no errors."
+    },
+    {
+      "command": "npm test",
+      "status": "pass",
+      "details": "All 3 tests passed (1 app test + 2 health tests)."
+    }
+  ],
+  "notes": [
+    "Followed existing app factory pattern from F001.",
+    "Health route registered inside createApp() before return, as contract specified."
+  ]
+}

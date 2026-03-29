@@ -1,0 +1,29 @@
+{
+  "feature_id": "F004",
+  "description": "Add POST /todos and GET /todos endpoints for creating and listing items",
+  "acceptance_criteria": [
+    "POST /todos with valid title creates an item and returns 201 with the created item",
+    "GET /todos returns 200 with an array of all items in creation order",
+    "Created items have id, title, completed=false, createdAt, and updatedAt",
+    "Unit test: todos.test.ts > 'POST /todos creates an item' verifies creation",
+    "Unit test: todos.test.ts > 'GET /todos returns all items' verifies listing",
+    "Build passes (npm run build)",
+    "Tests pass (npm test)"
+  ],
+  "verification_steps": [
+    "npm run build",
+    "npm test"
+  ],
+  "attempts": 1,
+  "priority": 4,
+  "last_error": "Implementation report commit SHA 53f938c does not match HEAD 53f938c8f471035ada6d5a2919a5a8f31c7549cb",
+  "source_requirement": "## Functional Requirements > ### 3. Create and list todos",
+  "depends_on": [
+    "F003"
+  ],
+  "related_files": [
+    "src/routes/todos.ts",
+    "src/app.ts",
+    "tests/todos.test.ts"
+  ]
+}

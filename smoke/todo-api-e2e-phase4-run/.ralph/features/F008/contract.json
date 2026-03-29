@@ -1,0 +1,35 @@
+{
+  "feature_id": "F008",
+  "goal": "Add input validation to POST and PATCH /todos endpoints, returning 400 with JSON error messages for missing/blank titles and invalid payloads.",
+  "scope_summary": "Add guard clauses at the top of the POST and PATCH route handlers in src/routes/todos.ts to validate request bodies before passing data to the store. POST rejects missing or blank title. PATCH rejects empty-string title and non-boolean completed values. All validation errors return 400 with { error: '...' } matching the existing error response shape. A new test file tests/validation.test.ts covers these cases using the same vitest+supertest pattern as todos.test.ts.",
+  "planned_changes": [
+    "Add title validation (missing and blank) to POST / handler in src/routes/todos.ts, returning 400 with JSON error before calling store.add()",
+    "Add payload validation to PATCH /:id handler in src/routes/todos.ts: reject empty-string title and non-boolean completed, returning 400 with JSON error before calling store.update()",
+    "Create tests/validation.test.ts with two describe blocks: 'POST /todos rejects missing title' and 'PATCH /todos/:id rejects invalid payload', using vitest+supertest against createApp()"
+  ],
+  "files_to_touch": [
+    "src/routes/todos.ts",
+    "tests/validation.test.ts"
+  ],
+  "commands_to_run": [
+    "npm run build",
+    "npm test"
+  ],
+  "acceptance_checks": [
+    "POST /todos with missing title returns 400 with JSON error",
+    "POST /todos with blank title returns 400 with JSON error",
+    "PATCH /todos/:id with empty title returns 400 with JSON error",
+    "PATCH /todos/:id with wrong data types returns 400 with JSON error",
+    "All error responses are JSON with descriptive messages",
+    "Unit test: validation.test.ts > 'POST /todos rejects missing title' verifies validation",
+    "Unit test: validation.test.ts > 'PATCH /todos/:id rejects invalid payload' verifies validation",
+    "Build passes (npm run build)",
+    "Tests pass (npm test)"
+  ],
+  "commit_message": "feat(F008): add input validation returning 400 for invalid POST/PATCH payloads",
+  "risks": [
+    "PATCH allows partial updates — validation must not reject requests that omit title or completed entirely, only reject when provided values are invalid",
+    "express.json() middleware returns its own 400 for malformed JSON before the route handler runs — tests must account for this if testing raw malformed bodies",
+    "Existing tests in todos.test.ts send POST without validation expectations — ensure new validation does not break existing tests that send valid payloads"
+  ]
+}

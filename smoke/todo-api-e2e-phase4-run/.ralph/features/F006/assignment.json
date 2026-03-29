@@ -1,0 +1,29 @@
+{
+  "feature_id": "F006",
+  "description": "Add PATCH /todos/:id endpoint to update title and/or completed status",
+  "acceptance_criteria": [
+    "PATCH /todos/:id updates title and/or completed and returns 200 with updated item",
+    "updatedAt changes when an update succeeds",
+    "PATCH /todos/:id returns 404 with JSON error for unknown id",
+    "Unit test: todos.test.ts > 'PATCH /todos/:id updates the item' verifies update",
+    "Unit test: todos.test.ts > 'PATCH /todos/:id returns 404 for unknown id' verifies not-found",
+    "Build passes (npm run build)",
+    "Tests pass (npm test)"
+  ],
+  "verification_steps": [
+    "npm run build",
+    "npm test"
+  ],
+  "attempts": 0,
+  "priority": 6,
+  "last_error": null,
+  "source_requirement": "## Functional Requirements > ### 5. Update a todo",
+  "depends_on": [
+    "F004"
+  ],
+  "related_files": [
+    "src/routes/todos.ts",
+    "src/store.ts",
+    "tests/todos.test.ts"
+  ]
+}

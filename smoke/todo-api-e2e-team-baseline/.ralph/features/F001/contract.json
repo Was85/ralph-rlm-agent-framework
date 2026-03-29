@@ -1,0 +1,40 @@
+{
+  "feature_id": "F001",
+  "goal": "Bootstrap the Node.js/TypeScript/Express project with an app factory, entry point, and passing smoke test.",
+  "scope_summary": "Create package.json with all required dependencies (typescript, express, vitest, supertest, and their type packages), tsconfig.json for TS compilation, src/app.ts exporting a createApp factory that returns an Express app without starting a listener, src/index.ts that calls the factory and listens on a port, and tests/app.test.ts verifying the app can be imported and boots without error. Define build and test npm scripts.",
+  "planned_changes": [
+    "Create package.json with typescript, express, vitest, supertest deps and build/test scripts",
+    "Create tsconfig.json targeting ES2020/Node with src include and dist outDir",
+    "Create src/app.ts exporting a createApp factory returning an Express application",
+    "Create src/index.ts importing createApp and starting the server on PORT env or 3000",
+    "Create tests/app.test.ts with a smoke test verifying app boots without error"
+  ],
+  "files_to_touch": [
+    "package.json",
+    "tsconfig.json",
+    "src/app.ts",
+    "src/index.ts",
+    "tests/app.test.ts"
+  ],
+  "commands_to_run": [
+    "npm install",
+    "npm run build",
+    "npm test"
+  ],
+  "acceptance_checks": [
+    "package.json has typescript, express, vitest, and supertest dependencies",
+    "tsconfig.json compiles TypeScript to JavaScript",
+    "Express app exported as factory so tests import without starting a listener",
+    "src/index.ts starts the server on a port",
+    "npm scripts: build, test are defined",
+    "Unit test: app.test.ts > 'app boots without error' verifies the app can be imported",
+    "Build passes (npm run build)",
+    "Tests pass (npm test)"
+  ],
+  "commit_message": "feat(F001): bootstrap TypeScript/Express project with app factory and smoke test",
+  "risks": [
+    "vitest config may need explicit setup for TypeScript — may require vitest.config.ts or package.json vitest section",
+    "Type packages (@types/express, @types/supertest) must be included or TS compilation will fail on import types",
+    "tsconfig must exclude tests or use a separate tsconfig.build.json to avoid compiling test files into dist"
+  ]
+}

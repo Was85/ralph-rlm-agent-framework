@@ -1,0 +1,35 @@
+{
+  "feature_id": "F001",
+  "outcome": "ready_for_review",
+  "summary": "Bootstrapped TypeScript/Express project with app factory pattern, entry point, and passing smoke test.",
+  "commit_sha": "ad7b66987602560baff3e42daf10e28fa01ac975",
+  "changed_files": [
+    ".gitignore",
+    "package.json",
+    "package-lock.json",
+    "tsconfig.json",
+    "src/app.ts",
+    "src/index.ts",
+    "tests/app.test.ts"
+  ],
+  "commands_run": [
+    "npm install",
+    "npm run build",
+    "npm test"
+  ],
+  "verification_results": [
+    {
+      "command": "npm run build",
+      "status": "pass",
+      "details": "TypeScript compilation succeeded with no errors."
+    },
+    {
+      "command": "npm test",
+      "status": "pass",
+      "details": "1 test passed: app > boots without error"
+    }
+  ],
+  "notes": [
+    "Added .gitignore for node_modules/ and dist/ — minimal addition not in contract but necessary to keep repo clean."
+  ]
+}

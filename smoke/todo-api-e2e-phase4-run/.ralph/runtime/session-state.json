@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "run_id": "run-1774666655016-41864",
+  "process_id": 41864,
+  "mode": "sequential",
+  "status": "completed",
+  "phase": "complete",
+  "started_at": "2026-03-28T02:57:35.016Z",
+  "updated_at": "2026-03-28T03:06:01.626Z",
+  "resumed_from_run_id": null,
+  "active_feature_ids": [],
+  "last_completed_feature_id": "F008",
+  "last_summary": "All features complete (8/8).",
+  "recent_lessons": [
+    "The sequential harness hit its iteration budget before clearing the backlog.",
+    "Feature F003 retry: Implementation report commit SHA 75476b7 does not match HEAD 75476b75dab53344a2e6b31c64ac44a826c9ca1d",
+    "Feature F004 retry: Implementation report commit SHA 53f938c does not match HEAD 53f938c8f471035ada6d5a2919a5a8f31c7549cb",
+    "Feature F005 retry: Implementation report commit SHA b4a427a does not match HEAD b4a427a5eac62771ed180eea43e0ba22c7a2d37d",
+    "Feature F008 retry: Implementer did not write a valid implementation-report.json artifact"
+  ]
+}
