@@ -3,3 +3,11 @@ dist/
 *.tgz
 .ralph-prompt-temp.md
 ralph-debug.log
+
+# Local dogfood/scaffolded project copies. Canonical shipped assets live under
+# ralph-rlm/scaffold-assets/ and ralph-rlm/prompts/.
+.claude/rules/
+.claude/skills/
+.ralph/
+prd.md
+templates/

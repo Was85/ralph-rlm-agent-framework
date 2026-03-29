@@ -132,6 +132,11 @@ ralph status
 
 Use it once per project.
 
+In this framework repo, the canonical examples Ralph ships from live under
+`ralph-rlm/scaffold-assets/templates/` and `ralph-rlm/scaffold-assets/claude/`.
+Repo-root `prd.md`, `templates/`, `.claude/`, and `.ralph/` copies are local
+project scaffolding, not the framework source of truth.
+
 ### 2. Write the PRD
 
 Write the whole project in `prd.md`, not just the next endpoint.
