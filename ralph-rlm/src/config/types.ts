@@ -99,6 +99,7 @@ export interface RalphConfig {
   teammates: number;
   skipReview: boolean;
   optimize: boolean;
+  maxAgentTurns: number;
 }
 
 export interface FeatureAssignment {

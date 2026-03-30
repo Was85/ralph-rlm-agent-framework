@@ -92,6 +92,11 @@ Docs: https://www.npmjs.com/package/@alcinanet/ralph-rlm`)
     default: false,
     describe: 'Alias for --dangerously-skip-permissions',
   })
+  .option('max-agent-turns', {
+    type: 'number',
+    default: 3,
+    describe: 'Max turns for non-implementation agent passes (init, optimize, repair)',
+  })
   .option('stream', {
     type: 'boolean',
     default: false,

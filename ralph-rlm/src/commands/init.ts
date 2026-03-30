@@ -126,7 +126,7 @@ export async function runInit(
             dangerouslySkipPermissions: config.dangerouslySkipPermissions,
             stream: config.stream,
             settingSources: 'project,local',
-            maxTurns: 3,
+            maxTurns: config.maxAgentTurns,
           });
 
           const repairedRaw = await readFile(featureListPath, 'utf-8');

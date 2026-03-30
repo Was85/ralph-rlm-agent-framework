@@ -52,7 +52,7 @@ Every feature must include precise priority, depends_on, source_requirement, rel
     dangerouslySkipPermissions: config.dangerouslySkipPermissions,
     stream: config.stream,
     settingSources: 'project,local',
-    maxTurns: 5,
+    maxTurns: config.maxAgentTurns + 2,
   });
 
   // Validate feature_list.json is still valid after optimizer
@@ -78,7 +78,7 @@ Every feature must include precise priority, depends_on, source_requirement, rel
         dangerouslySkipPermissions: config.dangerouslySkipPermissions,
         stream: config.stream,
         settingSources: 'project,local',
-        maxTurns: 3,
+        maxTurns: config.maxAgentTurns,
       });
 
       const repairedRaw = await readFile(featureListPath, 'utf-8');
