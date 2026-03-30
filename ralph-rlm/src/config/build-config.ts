@@ -16,5 +16,6 @@ export function buildConfig(argv: Record<string, unknown>): RalphConfig {
     teammates: (argv['teammates'] as number) ?? DEFAULT_CONFIG.teammates,
     skipReview: (argv['skipReview'] as boolean) ?? DEFAULT_CONFIG.skipReview,
     optimize: (argv['optimize'] as boolean) ?? DEFAULT_CONFIG.optimize,
+    maxAgentTurns: (argv['maxAgentTurns'] as number) ?? DEFAULT_CONFIG.maxAgentTurns,
   };
 }

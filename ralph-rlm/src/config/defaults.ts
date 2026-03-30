@@ -14,6 +14,7 @@ export const DEFAULT_CONFIG: RalphConfig = {
   teammates: 3,
   skipReview: false,
   optimize: false,
+  maxAgentTurns: 3,
 };
 
 export const DEFAULT_FEATURE_LIST_CONFIG: FeatureListConfig = {
