@@ -12,6 +12,9 @@ import {
   validateFeatureListQuality,
 } from '../core/feature-quality-gates.js';
 
+const OPTIMIZE_MAX_TURNS = 25;
+const OPTIMIZE_REPAIR_MAX_TURNS = 15;
+
 export async function runOptimize(
   config: RalphConfig,
   promptsDir: string,
@@ -52,7 +55,7 @@ Every feature must include precise priority, depends_on, source_requirement, rel
     dangerouslySkipPermissions: config.dangerouslySkipPermissions,
     stream: config.stream,
     settingSources: 'project,local',
-    maxTurns: config.maxAgentTurns + 2,
+    maxTurns: OPTIMIZE_MAX_TURNS,
   });
 
   // Validate feature_list.json is still valid after optimizer
@@ -78,7 +81,7 @@ Every feature must include precise priority, depends_on, source_requirement, rel
         dangerouslySkipPermissions: config.dangerouslySkipPermissions,
         stream: config.stream,
         settingSources: 'project,local',
-        maxTurns: config.maxAgentTurns,
+        maxTurns: OPTIMIZE_REPAIR_MAX_TURNS,
       });
 
       const repairedRaw = await readFile(featureListPath, 'utf-8');

@@ -12,6 +12,9 @@ import {
   validateFeatureListQuality,
 } from '../core/feature-quality-gates.js';
 
+const INIT_MAX_TURNS = 25;
+const INIT_REPAIR_MAX_TURNS = 15;
+
 const INIT_STASH_EXCLUDES = [
   ':(exclude).ralph/**',
   ':(exclude).claude/**',
@@ -87,6 +90,7 @@ export async function runInit(
       dangerouslySkipPermissions: config.dangerouslySkipPermissions,
       stream: config.stream,
       settingSources: 'project,local',
+      maxTurns: INIT_MAX_TURNS,
     });
 
     if (existsSync(featureListPath)) {
@@ -126,7 +130,7 @@ export async function runInit(
             dangerouslySkipPermissions: config.dangerouslySkipPermissions,
             stream: config.stream,
             settingSources: 'project,local',
-            maxTurns: config.maxAgentTurns,
+            maxTurns: INIT_REPAIR_MAX_TURNS,
           });
 
           const repairedRaw = await readFile(featureListPath, 'utf-8');

@@ -14,6 +14,21 @@ This repository now reflects the smoke-proven redesign:
 
 Based on Geoffrey Huntley's Ralph Wiggum technique, with a stronger long-running harness design and durable repo artifacts.
 
+## Changelog
+
+### v4.2.0
+
+- **Fix: test file inference for non-`src/` paths** — `inferTestFile` now falls back to matching any recognized source file extension when the path doesn't start with `src/`. This fixes initialization failures for .NET and other project layouts where source files live under project-specific directories (e.g., `Controllers/FooController.cs`, `Models/SourceType.cs`).
+- **Fix: init and optimize turn budgets** — Init and optimize phases now use dedicated turn budgets (25 main / 15 repair) instead of sharing the user-tunable `--max-agent-turns` default (3). These phases process the entire feature list and need substantially more turns than per-feature work.
+
+### v4.1.0
+
+- Add `--max-agent-turns` CLI flag to configure agent iteration limits.
+
+### v4.0.0
+
+- Full redesign with framework-owned state transitions, worktree isolation, and post-merge verification.
+
 ## What Ralph Does
 
 Ralph is for this workflow:
