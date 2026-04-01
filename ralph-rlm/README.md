@@ -16,6 +16,10 @@ Based on Geoffrey Huntley's Ralph Wiggum technique, with a stronger long-running
 
 ## Changelog
 
+### v4.2.1
+
+- **Fix: normalizer now satisfies unit-test evidence gate** — The normalizer generated `Tests pass (dotnet test)` for non-UI features, but the validator required keywords like "unit test" or "xunit" in the text. Every non-UI feature failed validation after normalization, causing optimization to always fail regardless of turn budget. Now generates `Unit tests pass (dotnet test)` which matches the validator's patterns.
+
 ### v4.2.0
 
 - **Fix: test file inference for non-`src/` paths** — `inferTestFile` now falls back to matching any recognized source file extension when the path doesn't start with `src/`. This fixes initialization failures for .NET and other project layouts where source files live under project-specific directories (e.g., `Controllers/FooController.cs`, `Models/SourceType.cs`).

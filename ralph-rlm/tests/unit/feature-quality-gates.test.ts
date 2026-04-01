@@ -224,7 +224,7 @@ describe('feature quality gates', () => {
     const changes = normalizeFeatureListQuality(data);
 
     expect(changes).toHaveLength(1);
-    expect(data.features[0]!.acceptance_criteria).toContain('Tests pass (npm test)');
+    expect(data.features[0]!.acceptance_criteria).toContain('Unit tests pass (npm test)');
     expect(data.features[0]!.related_files).toContain('tests/app.test.ts');
     expect(validateFeatureListQuality(data)).toEqual([]);
   });
@@ -304,5 +304,25 @@ describe('feature quality gates', () => {
 
     expect(data.features[0]!.related_files.some(f => /test/i.test(f))).toBe(true);
     expect(validateFeatureListQuality(data)).toEqual([]);
+  });
+
+  it('normalization satisfies unit-test evidence requirement without manual test criteria', () => {
+    const data = createFeatureList([
+      createBackendFeature({
+        acceptance_criteria: [
+          'SourceType enum has MonitoringFrendsProcess value.',
+          'Build passes (`npm run build`).',
+        ],
+        verification_steps: ['npm run build'],
+        related_files: [
+          'src/models/SourceType.ts',
+        ],
+      }),
+    ]);
+
+    normalizeFeatureListQuality(data);
+    const issues = validateFeatureListQuality(data);
+
+    expect(issues.filter(i => i.message.includes('unit-test or integration-test'))).toEqual([]);
   });
 });

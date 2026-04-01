@@ -89,7 +89,7 @@ export function normalizeFeatureListQuality(data: FeatureList): FeatureQualityNo
       const hasUiSurface = isUiFeature(feature, feature.related_files);
       const testCriterion = hasUiSurface
         ? `Playwright E2E tests pass (${testCommand})`
-        : `Tests pass (${testCommand})`;
+        : `Unit tests pass (${testCommand})`;
 
       if (!mentionsCommand(feature.acceptance_criteria, testCommand)) {
         feature.acceptance_criteria.push(testCriterion);
