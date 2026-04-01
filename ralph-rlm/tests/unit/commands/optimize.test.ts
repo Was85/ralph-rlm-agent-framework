@@ -265,7 +265,7 @@ describe('optimize command', () => {
     expect(repaired.features[0].related_files).toContain('tests/app.test.ts');
   });
 
-  it('passes maxTurns 5 to runner config', async () => {
+  it('passes dedicated max turns to runner config independent of maxAgentTurns', async () => {
     await writeFile(path.join(tmpDir, 'feature_list.json'), JSON.stringify(makeFeatureList()), 'utf-8');
 
     let capturedConfig: RunnerConfig | null = null;
@@ -279,7 +279,7 @@ describe('optimize command', () => {
     };
 
     await runOptimize(makeConfig(), promptsDir, runner, tmpDir);
-    expect(capturedConfig?.maxTurns).toBe(5);
+    expect(capturedConfig?.maxTurns).toBe(25);
   });
 
   it('runs one targeted repair pass when the optimized feature list still fails the quality gate', async () => {

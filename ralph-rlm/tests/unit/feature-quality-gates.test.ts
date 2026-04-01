@@ -261,4 +261,48 @@ describe('feature quality gates', () => {
     ]);
     expect(validateFeatureListQuality(data)).toEqual([]);
   });
+
+  it('infers test files for source files without src/ prefix', () => {
+    const data = createFeatureList([
+      createBackendFeature({
+        acceptance_criteria: [
+          'SourceType enum has correct values.',
+          'Build passes (`npm run build`).',
+          'Unit test: SourceType enum is verified.',
+        ],
+        verification_steps: ['npm run build', 'npm test'],
+        related_files: [
+          'Models/SourceType.cs',
+        ],
+      }),
+    ]);
+
+    const changes = normalizeFeatureListQuality(data);
+
+    expect(changes.length).toBeGreaterThanOrEqual(1);
+    expect(data.features[0]!.related_files.some(f => /test/i.test(f))).toBe(true);
+    expect(validateFeatureListQuality(data)).toEqual([]);
+  });
+
+  it('infers test files for nested non-src paths like Controllers/FooController.cs', () => {
+    const data = createFeatureList([
+      createBackendFeature({
+        acceptance_criteria: [
+          'ActionsController returns correct responses.',
+          'Build passes (`npm run build`).',
+          'Unit test: ActionsController verified.',
+        ],
+        verification_steps: ['npm run build', 'npm test'],
+        related_files: [
+          'Controllers/ActionsController.cs',
+          'Services/FrendsApiService.cs',
+        ],
+      }),
+    ]);
+
+    const changes = normalizeFeatureListQuality(data);
+
+    expect(data.features[0]!.related_files.some(f => /test/i.test(f))).toBe(true);
+    expect(validateFeatureListQuality(data)).toEqual([]);
+  });
 });

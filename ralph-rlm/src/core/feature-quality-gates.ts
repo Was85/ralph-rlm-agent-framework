@@ -458,7 +458,8 @@ function inferTestFile(relatedFiles: string[], isUi: boolean): string | null {
     }
 
     const normalized = relatedFile.replace(/\\/g, '/');
-    const sourceMatch = normalized.match(/^src\/(.+)\.(ts|tsx|js|jsx|cs|py|go|java)$/i);
+    const sourceMatch = normalized.match(/^src\/(.+)\.(ts|tsx|js|jsx|cs|py|go|java)$/i)
+      ?? normalized.match(/^(.+)\.(ts|tsx|js|jsx|cs|py|go|java)$/i);
     if (sourceMatch) {
       const [, stem, extension] = sourceMatch;
       return isUi
