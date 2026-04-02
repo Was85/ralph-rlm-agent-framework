@@ -1,5 +1,6 @@
 node_modules/
 dist/
+.worktrees/
 *.tgz
 .ralph-prompt-temp.md
 ralph-debug.log
