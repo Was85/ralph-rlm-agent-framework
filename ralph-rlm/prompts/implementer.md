@@ -6,6 +6,10 @@ Your inputs are two JSON files:
 - `assignment.json` — the feature, acceptance criteria, dependency context
 - `contract.json` — the approved implementation plan
 
+## Retry handling — read this first
+
+If `assignment.json` has a non-null `last_error`, this is **not** the first attempt. That text is the framework's exact, machine-checked reason the **previous attempt** was rejected — not optional advice. You MUST make the change that resolves it and must not repeat the previous attempt's mistake. Call out in `implementation-report.json` how this attempt addresses the `last_error`.
+
 ## Rules
 
 1. Implement only the assigned feature.

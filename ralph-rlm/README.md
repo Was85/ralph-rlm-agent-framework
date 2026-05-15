@@ -16,6 +16,16 @@ Based on Geoffrey Huntley's Ralph Wiggum technique, with a stronger long-running
 
 ## Changelog
 
+### v4.2.3
+
+Run-harness usability — found and fixed by running `ralph run` on a real .NET project end-to-end (F001+F002 now implement → verify → merge → complete):
+
+- **Fix: rejections are no longer silent** — when a feature is blocked, retried, or fails merge/post-merge verification, `ralph run` now prints the reason to the console immediately. Previously the reason was written only to `feature_list.json`/runtime state, so a user saw agents "approved" then an opaque exit. The post-run report also shows `last_error` for in-progress features (was blocked-only) and no longer truncates the actionable detail at 80 chars.
+- **Fix: honest terminal output** — every exit path (complete / blocked / iteration-budget / corrupt) now prints a POST-RUN REPORT and a clear "what to do next" line. "Max iterations reached → exit 1 with no info" is now "Stopped at the iteration budget (N) — X/Y complete, Z still open, not finished but resumable".
+- **Fix: no dirty leftover** — framework-owned state (`feature_list.json`, `claude-progress.txt`, `.ralph/`) is now committed on all exit paths, not just full completion, so a subsequent run never starts from a dirty tree.
+- **Fix: retry is no longer blind** — planner/implementer/evaluator prompts now require resolving `assignment.last_error`, and the verifier must cover every contract `acceptance_check` one-to-one, so a retry resolves the prior failure instead of repeating it.
+- **Fix: Ralph can commit its own artifacts in projects that gitignore `.ralph`** — new `forceAddAndCommit` helper uses `git add -f` for Ralph-owned paths. A plain `git add` aborted on the gitignored `.ralph` and crashed the run the first time the merge path was reached.
+
 ### v4.2.2
 
 - **Fix: preflight CLI detection on Windows** — `checkCli`/`checkRunnerAuth` used `where`/`execFile` without a shell, which on Windows cannot resolve PATH or run the `.cmd` shims that `npm install -g` produces for `claude`/`copilot`. `ralph init` reported "CLI not found" even when the runner was installed. Detection now runs through a shell (matching `shell-spawn.ts`), so npm-installed runners are found.

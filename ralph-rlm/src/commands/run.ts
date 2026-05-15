@@ -7,8 +7,9 @@ import * as featureStore from '../core/feature-store.js';
 import { recalculateStats } from '../core/stats.js';
 import * as progressLog from '../core/progress-log.js';
 import * as logger from '../ui/logger.js';
+import { formatPostRunReport } from '../ui/post-run-report.js';
 import { FEATURE_LIST_FILE, PROGRESS_FILE, RALPH_DIR, RALPH_FEATURES_DIR } from '../config/defaults.js';
-import { gitExec, sanitizeCommitMessage } from '../core/safe-exec.js';
+import { forceAddAndCommit } from '../core/safe-exec.js';
 import { selectNextFeature } from '../core/scheduler.js';
 import { runFeatureHarness } from '../core/harness-runner.js';
 import {
@@ -132,6 +133,8 @@ export async function runImplement(
       return 1;
     }
 
+    let lastData: Awaited<ReturnType<typeof featureStore.read>> | undefined;
+
     for (let iteration = 0; iteration < config.maxIterations; iteration++) {
       logger.info(`--- Implementation Iteration ${iteration + 1} of ${config.maxIterations} ---`);
 
@@ -237,6 +240,7 @@ export async function runImplement(
           const mergeResult = await manager.merge(worktree, cwd);
           if (!mergeResult.success || !mergeResult.mergeCommit) {
             const reason = mergeResult.error ?? 'Merge failed';
+            logger.error(`${targetFeature.id} MERGE FAILED — ${reason}`);
             await copyFeatureHarness(worktree.path, cwd, targetFeature.id);
             const finalStatus = await markAttempt(featureListPath, targetFeature.id, reason);
             await updateRuntimeFeatureState(cwd, targetFeature.id, {
@@ -279,6 +283,7 @@ export async function runImplement(
             });
             const verification = await verifyFeature(cwd, featureListPath, targetFeature.id, mergeResult.mergeCommit);
             if (!verification.ok) {
+              logger.error(`${targetFeature.id} POST-MERGE VERIFICATION FAILED${verification.command ? ` at: ${verification.command}` : ''}${verification.error ? ` — ${verification.error}` : ''} (merge reverted)`);
               await manager.revertLastMerge(cwd, mergeResult.mergeCommit);
               await copyFeatureHarness(worktree.path, cwd, targetFeature.id);
               await recordPostMergeVerification(cwd, targetFeature.id, mergeResult.mergeCommit, verification);
@@ -341,6 +346,7 @@ export async function runImplement(
             }
           }
         } else if (harnessResult.outcome === 'blocked') {
+          logger.error(`${targetFeature.id} BLOCKED — ${harnessResult.summary}`);
           await copyFeatureHarness(worktree.path, cwd, targetFeature.id);
           await markAttempt(featureListPath, targetFeature.id, harnessResult.summary, true);
           await updateRuntimeFeatureState(cwd, targetFeature.id, {
@@ -364,6 +370,11 @@ export async function runImplement(
         } else {
           await copyFeatureHarness(worktree.path, cwd, targetFeature.id);
           const finalStatus = await markAttempt(featureListPath, targetFeature.id, harnessResult.summary);
+          if (finalStatus === 'blocked') {
+            logger.error(`${targetFeature.id} BLOCKED after ${targetFeature.attempts + 1} attempt(s) — ${harnessResult.summary}`);
+          } else {
+            logger.warning(`${targetFeature.id} not accepted (will retry) — ${harnessResult.summary}`);
+          }
           await updateRuntimeFeatureState(cwd, targetFeature.id, {
             phase: 'feature_harness',
             status: finalStatus === 'blocked' ? 'blocked' : 'retry',
@@ -397,6 +408,7 @@ export async function runImplement(
       const afterData = await featureStore.read(featureListPath);
       recalculateStats(afterData);
       await featureStore.write(featureListPath, afterData);
+      lastData = afterData;
 
       const total = afterData.features.length;
       const complete = afterData.stats.complete;
@@ -412,6 +424,7 @@ export async function runImplement(
           lessons: ['feature_list.json must not be reduced to an empty feature set during runtime.'],
         });
         await recordEvent('session_finished', 'cleanup', 'feature_list.json appears corrupted (0 features found).');
+        await commitManagedState(cwd, undefined, 'final harness state (corrupted feature list)');
         return 1;
       }
 
@@ -425,6 +438,7 @@ export async function runImplement(
         });
         await recordEvent('session_finished', 'complete', `All features complete (${complete}/${total}).`);
         await commitManagedState(cwd, undefined, 'final harness state');
+        printRunSummary(afterData, 'all features complete — nothing left to do.');
         return 0;
       }
 
@@ -438,6 +452,11 @@ export async function runImplement(
           lessons: ['Human intervention is required before sequential execution can continue.'],
         });
         await recordEvent('session_finished', 'complete', `${blockedCount} feature(s) are blocked and no ready work remains.`);
+        await commitManagedState(cwd, undefined, 'final harness state (blocked)');
+        printRunSummary(
+          afterData,
+          `${blockedCount} feature(s) blocked — see each BLOCKED error above, fix the root cause or sharpen the story, then re-run "ralph run".`,
+        );
         return 2;
       }
 
@@ -449,15 +468,34 @@ export async function runImplement(
       }
     }
 
-    logger.warning(`Max iterations reached (${config.maxIterations})`);
+    // Reuse the last iteration's data rather than re-reading: the honest
+    // "stopped, resumable" summary must never itself fail silently on a
+    // corrupt-read at exit (mid-loop corruption is already handled above).
+    const stoppedData = lastData;
+    const stillOpen = stoppedData
+      ? stoppedData.features.filter(f => f.status === 'pending' || f.status === 'in_progress').length
+      : 0;
+    logger.warning(
+      stoppedData
+        ? `Stopped at the iteration budget (${config.maxIterations} iteration(s)). ` +
+          `${stoppedData.stats.complete}/${stoppedData.features.length} complete, ${stillOpen} still open — not finished, but resumable.`
+        : `Stopped at the iteration budget (${config.maxIterations} iteration(s)) — not finished, but resumable.`,
+    );
     await setRuntimeSessionState(cwd, {
       status: 'failed',
       phase: 'complete',
-      summary: `Max iterations reached (${config.maxIterations}).`,
+      summary: `Stopped at iteration budget (${config.maxIterations}); ${stillOpen} feature(s) still open and resumable.`,
       activeFeatureIds: [],
-      lessons: ['The sequential harness hit its iteration budget before clearing the backlog.'],
+      lessons: [`Stopped at the ${config.maxIterations}-iteration budget with ${stillOpen} feature(s) still open; resumable with "ralph run".`],
     });
-    await recordEvent('session_finished', 'complete', `Max iterations reached (${config.maxIterations}).`);
+    await recordEvent('session_finished', 'complete', `Stopped at iteration budget (${config.maxIterations}); ${stillOpen} feature(s) still open.`);
+    await commitManagedState(cwd, undefined, 'final harness state (iteration budget reached)');
+    if (stoppedData) {
+      printRunSummary(
+        stoppedData,
+        'not finished — raise --max-iterations (or omit it) and re-run "ralph run" to resume; see the last error on each in-progress feature above.',
+      );
+    }
     return 1;
   } finally {
     process.removeListener('SIGINT', shutdownHandler);
@@ -551,19 +589,11 @@ async function handleNoReadySequentialWork(
 }
 
 async function commitWorktreeArtifacts(worktreePath: string, featureId: string): Promise<void> {
-  const managedPaths = [
-    path.join(RALPH_DIR, RALPH_FEATURES_DIR, featureId),
-  ];
-  const existing = managedPaths.filter(managedPath => existsSync(path.join(worktreePath, managedPath)));
-  if (existing.length === 0) return;
-
-  await gitExec(['add', '--', ...existing], worktreePath);
-  const { stdout } = await gitExec(['status', '--porcelain', '--', ...existing], worktreePath);
-  if (!stdout.trim()) return;
-
-  await gitExec(
-    ['commit', '-m', sanitizeCommitMessage(`chore: record evaluation for ${featureId}`)],
+  // .ralph is routinely gitignored by real projects; force-add (Ralph-owned).
+  await forceAddAndCommit(
     worktreePath,
+    [path.join(RALPH_DIR, RALPH_FEATURES_DIR, featureId)],
+    `chore: record evaluation for ${featureId}`,
   );
 }
 
@@ -645,13 +675,19 @@ async function ensureFrameworkFilesTracked(cwd: string): Promise<void> {
   if (toAdd.length === 0) return;
 
   try {
-    await gitExec(['add', '--', ...toAdd], cwd);
-    const { stdout } = await gitExec(['status', '--porcelain', '--', ...toAdd], cwd);
-    if (stdout.trim()) {
-      await gitExec(['commit', '-m', 'chore: track framework directories'], cwd);
-    }
+    await forceAddAndCommit(cwd, toAdd, 'chore: track framework directories');
   } catch {
     // Best effort.
+  }
+}
+
+function printRunSummary(data: Awaited<ReturnType<typeof featureStore.read>>, nextAction: string): void {
+  for (const line of formatPostRunReport(data)) {
+    logger.info(line);
+  }
+  if (nextAction) {
+    logger.info(`  Next: ${nextAction}`);
+    logger.info('');
   }
 }
 
@@ -661,18 +697,9 @@ async function commitManagedState(cwd: string, featureId?: string, message?: str
     managed.push(path.join(RALPH_DIR, RALPH_FEATURES_DIR, featureId));
   }
 
-  const existing = managed.filter(managedPath => existsSync(path.join(cwd, managedPath)));
-  if (existing.length === 0) return;
-
   try {
-    await gitExec(['add', '--', ...existing], cwd);
-    const { stdout } = await gitExec(['status', '--porcelain', '--', ...existing], cwd);
-    if (stdout.trim()) {
-      await gitExec(
-        ['commit', '-m', sanitizeCommitMessage(`chore: ${message ?? 'update harness state'}`)],
-        cwd,
-      );
-    }
+    // Ralph-owned state is often gitignored by the project; force-add it.
+    await forceAddAndCommit(cwd, managed, `chore: ${message ?? 'update harness state'}`);
   } catch {
     // Best effort. Harness state staying uncommitted is not fatal.
   }

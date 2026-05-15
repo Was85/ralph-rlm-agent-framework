@@ -62,6 +62,10 @@ vi.mock('../../../src/core/safe-exec.js', () => ({
     return { stdout: '', stderr: '' };
   }),
   sanitizeCommitMessage: vi.fn((message: string) => message),
+  // Ralph-owned-state commit helper. With the mocked git layer there is
+  // never anything to commit (status --porcelain returns ''), so the
+  // faithful result is "nothing committed".
+  forceAddAndCommit: vi.fn(async () => false),
 }));
 
 class MockWorktreeManager implements WorktreeManager {
