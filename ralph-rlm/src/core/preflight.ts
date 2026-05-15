@@ -1,12 +1,44 @@
 import { access } from 'node:fs/promises';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import { spawn } from 'node:child_process';
 import path from 'node:path';
 import type { RunnerType } from '../config/types.js';
 import * as logger from '../ui/logger.js';
 import { ensureExists } from './progress-log.js';
 
-const execFileAsync = promisify(execFile);
+function shellEscapeArg(arg: string): string {
+  if (process.platform === 'win32') {
+    return `"${arg.replace(/"/g, '\\"').replace(/%/g, '%%')}"`;
+  }
+  return `'${arg.replace(/'/g, "'\\''")}'`;
+}
+
+interface CommandResult {
+  code: number;
+  stdout: string;
+}
+
+/**
+ * Runs `command args...` through a shell, resolving its exit code and stdout.
+ *
+ * `shell: true` is required on Windows: npm installs CLI runners
+ * (`claude`, `copilot`) as `.cmd` batch shims, and Node's `execFile`/`spawn`
+ * without a shell cannot execute `.cmd`/`.bat` — so a bare `execFile` lookup
+ * reports the CLI as missing even when it is installed and on PATH. The
+ * command line is a single string with an empty args array (avoids the
+ * shell+args deprecation) and arguments are shell-escaped. Mirrors the
+ * established pattern in `src/runners/shell-spawn.ts`. `command` is a
+ * controlled value (RunnerType), never user input.
+ */
+function runCommand(command: string, args: string[]): Promise<CommandResult> {
+  return new Promise((resolve) => {
+    const cmdLine = [command, ...args.map(shellEscapeArg)].join(' ');
+    const proc = spawn(cmdLine, [], { shell: true });
+    let stdout = '';
+    proc.stdout?.on('data', (chunk) => { stdout += String(chunk); });
+    proc.on('close', (code) => resolve({ code: code ?? 1, stdout }));
+    proc.on('error', () => resolve({ code: 1, stdout: '' }));
+  });
+}
 
 export async function checkGit(cwd: string): Promise<boolean> {
   try {
@@ -18,18 +50,27 @@ export async function checkGit(cwd: string): Promise<boolean> {
   }
 }
 
+/**
+ * Returns true if `command` can be invoked, by running `command --version`
+ * through a shell. Replaces the legacy `where`/`which` lookup, which failed
+ * on Windows because Node's `execFile` does not resolve bare command names
+ * (e.g. `where`) against PATH even when the runner CLI is installed.
+ */
+export async function isCliAvailable(command: string): Promise<boolean> {
+  const { code } = await runCommand(command, ['--version']);
+  return code === 0;
+}
+
 export async function checkCli(runner: RunnerType): Promise<boolean> {
-  const cmd = process.platform === 'win32' ? 'where' : 'which';
-  try {
-    await execFileAsync(cmd, [runner]);
+  if (await isCliAvailable(runner)) {
     return true;
-  } catch {
-    const installHint = runner === 'claude'
-      ? 'npm install -g @anthropic-ai/claude-code'
-      : 'See https://github.com/features/copilot/cli';
-    logger.error(`${runner} CLI not found. Install it: ${installHint}`);
-    return false;
   }
+
+  const installHint = runner === 'claude'
+    ? 'npm install -g @anthropic-ai/claude-code'
+    : 'See https://github.com/features/copilot/cli';
+  logger.error(`${runner} CLI not found. Install it: ${installHint}`);
+  return false;
 }
 
 export async function checkRunnerAuth(runner: RunnerType): Promise<boolean> {
@@ -41,14 +82,16 @@ export async function checkRunnerAuth(runner: RunnerType): Promise<boolean> {
     return true;
   }
 
-  try {
-    const { stdout } = await execFileAsync('claude', ['auth', 'status']);
-    const parsed = JSON.parse(stdout) as { loggedIn?: boolean };
-    if (parsed.loggedIn) {
-      return true;
+  const { code, stdout } = await runCommand('claude', ['auth', 'status']);
+  if (code === 0) {
+    try {
+      const parsed = JSON.parse(stdout) as { loggedIn?: boolean };
+      if (parsed.loggedIn) {
+        return true;
+      }
+    } catch {
+      // Fall through to the shared error below.
     }
-  } catch {
-    // Fall through to the shared error below.
   }
 
   logger.error('claude CLI is installed but not authenticated. Run "claude auth login" or set ANTHROPIC_API_KEY.');

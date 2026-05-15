@@ -16,6 +16,11 @@ Based on Geoffrey Huntley's Ralph Wiggum technique, with a stronger long-running
 
 ## Changelog
 
+### v4.2.2
+
+- **Fix: preflight CLI detection on Windows** — `checkCli`/`checkRunnerAuth` used `where`/`execFile` without a shell, which on Windows cannot resolve PATH or run the `.cmd` shims that `npm install -g` produces for `claude`/`copilot`. `ralph init` reported "CLI not found" even when the runner was installed. Detection now runs through a shell (matching `shell-spawn.ts`), so npm-installed runners are found.
+- **Fix: REST pagination no longer misclassified as UI / too-broad** — quality gates matched bare `page`/`all pages`, so backend features like "fetches one page of GET /api/v1/x" or "paginates all pages into a list" were rejected as needing Playwright E2E or as "too broad", hard-failing `ralph init` for API projects. Pagination is now detected by context (`paginate`, `page number/size`, `page(s) of <api>`) without masking genuine UI features that merely call an endpoint.
+
 ### v4.2.1
 
 - **Fix: normalizer now satisfies unit-test evidence gate** — The normalizer generated `Tests pass (dotnet test)` for non-UI features, but the validator required keywords like "unit test" or "xunit" in the text. Every non-UI feature failed validation after normalization, causing optimization to always fail regardless of turn budget. Now generates `Unit tests pass (dotnet test)` which matches the validator's patterns.
