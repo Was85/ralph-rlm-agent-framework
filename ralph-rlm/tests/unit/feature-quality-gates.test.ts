@@ -224,7 +224,7 @@ describe('feature quality gates', () => {
     const changes = normalizeFeatureListQuality(data);
 
     expect(changes).toHaveLength(1);
-    expect(data.features[0]!.acceptance_criteria).toContain('Tests pass (npm test)');
+    expect(data.features[0]!.acceptance_criteria).toContain('Unit tests pass (npm test)');
     expect(data.features[0]!.related_files).toContain('tests/app.test.ts');
     expect(validateFeatureListQuality(data)).toEqual([]);
   });
@@ -304,5 +304,121 @@ describe('feature quality gates', () => {
 
     expect(data.features[0]!.related_files.some(f => /test/i.test(f))).toBe(true);
     expect(validateFeatureListQuality(data)).toEqual([]);
+  });
+
+  it('normalization satisfies unit-test evidence requirement without manual test criteria', () => {
+    const data = createFeatureList([
+      createBackendFeature({
+        acceptance_criteria: [
+          'SourceType enum has MonitoringFrendsProcess value.',
+          'Build passes (`npm run build`).',
+        ],
+        verification_steps: ['npm run build'],
+        related_files: [
+          'src/models/SourceType.ts',
+        ],
+      }),
+    ]);
+
+    normalizeFeatureListQuality(data);
+    const issues = validateFeatureListQuality(data);
+
+    expect(issues.filter(i => i.message.includes('unit-test or integration-test'))).toEqual([]);
+  });
+
+  it('does not classify a REST pagination feature as UI (the "page" false positive)', () => {
+    const data = createFeatureList([
+      createBackendFeature({
+        description: 'FrendsApiService.GetProcessesAsync fetches+maps one page of GET /api/v1/processes',
+        acceptance_criteria: [
+          'GET /api/v1/processes called with PageNumber and PageSize query params for a single page.',
+          'Unit test: FrendsApiServiceProcessTests verifies params + mapping.',
+          'Build passes (`npm run build`).',
+        ],
+        related_files: [
+          'src/services/FrendsApiService.cs',
+          'tests/services/FrendsApiServiceProcessTests.cs',
+        ],
+      }),
+    ]);
+
+    const issues = validateFeatureListQuality(data);
+
+    expect(issues.filter(i => i.message.includes('UI features must include'))).toEqual([]);
+  });
+
+  it('does not flag a REST pagination feature as too broad (the "all pages" false positive)', () => {
+    const data = createFeatureList([
+      createBackendFeature({
+        description: 'FrendsApiService.GetProcessesAsync paginates all pages into a combined FrendsProcess list',
+      }),
+    ]);
+
+    const issues = validateFeatureListQuality(data);
+
+    expect(issues.filter(i => i.message.includes('too broad'))).toEqual([]);
+  });
+
+  it('still classifies a genuine UI page feature as UI', () => {
+    const data = createFeatureList([
+      createBackendFeature({
+        description: 'Render the account settings page with the saved profile fields.',
+        acceptance_criteria: [
+          'The settings page renders saved profile fields.',
+          'Build passes (`npm run build`).',
+          'Unit tests pass (`npm test`).',
+        ],
+      }),
+    ]);
+
+    const issues = validateFeatureListQuality(data);
+
+    expect(issues.some(i => i.message.includes('UI features must include'))).toBe(true);
+  });
+
+  it('still classifies a UI page that calls an API endpoint as UI', () => {
+    const data = createFeatureList([
+      createBackendFeature({
+        description: 'Build the Orders page that calls GET /api/v1/orders and renders a table.',
+        acceptance_criteria: [
+          'The Orders page renders a table from GET /api/v1/orders.',
+          'Build passes (`npm run build`).',
+          'Unit tests pass (`npm test`).',
+        ],
+      }),
+    ]);
+
+    const issues = validateFeatureListQuality(data);
+
+    expect(issues.some(i => i.message.includes('UI features must include'))).toBe(true);
+  });
+
+  it('still classifies a UI page sourced from an endpoint as UI', () => {
+    const data = createFeatureList([
+      createBackendFeature({
+        description: 'Create the dashboard page; data comes from the /api/metrics endpoint.',
+        acceptance_criteria: [
+          'The dashboard page renders metrics from /api/metrics.',
+          'Build passes (`npm run build`).',
+          'Unit tests pass (`npm test`).',
+        ],
+      }),
+    ]);
+
+    const issues = validateFeatureListQuality(data);
+
+    expect(issues.some(i => i.message.includes('UI features must include'))).toBe(true);
+  });
+
+  it('still flags genuine scope creep ("all pages of the dashboard") as too broad', () => {
+    const data = createFeatureList([
+      createBackendFeature({
+        description: 'Implement all pages of the admin dashboard with navigation.',
+      }),
+    ]);
+
+    const issues = validateFeatureListQuality(data);
+
+    expect(issues.some(i => i.message.includes('too broad'))).toBe(true);
   });
 });

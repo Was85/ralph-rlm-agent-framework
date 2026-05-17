@@ -1,5 +1,15 @@
 import type { FeatureList } from '../config/types.js';
 
+// Keep enough of the reason that the actionable detail survives — these
+// messages (e.g. "Verification report omitted required acceptance checks:
+// Installer.wixproj has no .sqlproj ProjectReference …") carry the fix at
+// the end, so an 80-char cut hid exactly the part the user needs.
+function formatLastError(lastError: string | null | undefined): string {
+  if (!lastError) return '-';
+  if (lastError.length > 280) return lastError.substring(0, 277) + '...';
+  return lastError;
+}
+
 export function formatPostRunReport(data: FeatureList): string[] {
   const lines: string[] = [];
   const total = data.features.length;
@@ -32,19 +42,20 @@ export function formatPostRunReport(data: FeatureList): string[] {
     lines.push(`  BLOCKED (${blocked.length})`);
     for (const f of blocked) {
       const claimedBy = f.claimed_by ?? '-';
-      let lastError = f.last_error ?? '-';
-      if (lastError.length > 80) lastError = lastError.substring(0, 77) + '...';
       lines.push(`    ${f.id}: ${f.description}`);
-      lines.push(`      by: ${claimedBy} | error: ${lastError}`);
+      lines.push(`      by: ${claimedBy} | error: ${formatLastError(f.last_error)}`);
     }
     lines.push('');
   }
 
   if (inProgress.length > 0) {
-    lines.push(`  IN-PROGRESS (${inProgress.length}) - may indicate crashed teammates`);
+    lines.push(`  IN-PROGRESS (${inProgress.length}) - stopped mid-feature (not yet complete)`);
     for (const f of inProgress) {
       const claimedBy = f.claimed_by ?? '-';
       lines.push(`    ${f.id}: ${f.description}  [claimed by: ${claimedBy}]`);
+      if (f.last_error) {
+        lines.push(`      last error: ${formatLastError(f.last_error)}`);
+      }
     }
     lines.push('');
   }

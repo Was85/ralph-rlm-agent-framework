@@ -14,7 +14,6 @@ const UI_FILE_PATTERN = /\.(?:tsx|jsx|vue|svelte|html|css|scss|sass|less|razor|c
 const UI_KEYWORD_PATTERNS = [
   /\bui\b/i,
   /\bfrontend\b/i,
-  /\bpage\b/i,
   /\bscreen\b/i,
   /\bcomponent\b/i,
   /\bmodal\b/i,
@@ -22,6 +21,15 @@ const UI_KEYWORD_PATTERNS = [
   /\bbutton\b/i,
   /\bview\b/i,
 ];
+// "page"/"pages" is only a weak UI signal: in backend work it almost always
+// means a REST pagination page, not a rendered web page.
+const UI_PAGE_PATTERN = /\bpages?\b/i;
+// Signals that a "page"/"pages" mention is REST pagination, not a UI surface.
+// Deliberately specific: a generic API/endpoint mention is NOT enough (a UI
+// page that merely calls an endpoint must stay classified as UI), so the
+// only API-flavoured trigger is "page(s) of <api token>" (e.g. "one page of
+// GET /api/v1/x"), which does not match "Orders page that calls GET /api/x".
+const API_PAGINATION_PATTERN = /(?:\bpaginat\w*|\bpage\s*(?:number|size|index|token|count)\b|\bper[-\s]?page\b|\bnext\s+page\b|\bpages?\s+of\s+(?:the\s+)?(?:GET|POST|PUT|DELETE|PATCH|https?:|\/|api\b|endpoint|response|results?))/i;
 const E2E_PATTERNS = [
   /\bplaywright\b/i,
   /\bcypress\b/i,
@@ -89,7 +97,7 @@ export function normalizeFeatureListQuality(data: FeatureList): FeatureQualityNo
       const hasUiSurface = isUiFeature(feature, feature.related_files);
       const testCriterion = hasUiSurface
         ? `Playwright E2E tests pass (${testCommand})`
-        : `Tests pass (${testCommand})`;
+        : `Unit tests pass (${testCommand})`;
 
       if (!mentionsCommand(feature.acceptance_criteria, testCommand)) {
         feature.acceptance_criteria.push(testCriterion);
@@ -282,7 +290,7 @@ function validateFeature(feature: Feature, data: FeatureList, issues: FeatureQua
     }
   }
 
-  if (BROAD_DESCRIPTION_PATTERNS.some(pattern => pattern.test(feature.description))) {
+  if (isDescriptionTooBroad(feature.description)) {
     issues.push({ featureId: feature.id, message: 'Description is too broad. Split the feature into smaller stories.' });
   }
 
@@ -429,8 +437,27 @@ function mentionsPattern(items: string[], patterns: RegExp[]): boolean {
 }
 
 function isUiFeature(feature: Feature, relatedFiles: string[]): boolean {
-  return relatedFiles.some(file => UI_FILE_PATTERN.test(file))
-    || UI_KEYWORD_PATTERNS.some(pattern => pattern.test(feature.description));
+  if (relatedFiles.some(file => UI_FILE_PATTERN.test(file))) {
+    return true;
+  }
+
+  const description = feature.description;
+  if (UI_KEYWORD_PATTERNS.some(pattern => pattern.test(description))) {
+    return true;
+  }
+
+  // "page"/"pages" counts as UI only when it is not REST pagination.
+  return UI_PAGE_PATTERN.test(description) && !API_PAGINATION_PATTERN.test(description);
+}
+
+function isDescriptionTooBroad(description: string): boolean {
+  let text = description;
+  // REST pagination legitimately says "all pages"; that is one atomic
+  // behavior, not scope creep across many UI pages.
+  if (API_PAGINATION_PATTERN.test(text)) {
+    text = text.replace(/\ball\s+pages\b/gi, ' pagination ');
+  }
+  return BROAD_DESCRIPTION_PATTERNS.some(pattern => pattern.test(text));
 }
 
 function isBootstrapFeature(feature: Feature, relatedFiles: string[]): boolean {

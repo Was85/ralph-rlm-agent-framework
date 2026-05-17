@@ -261,7 +261,7 @@ describe('optimize command', () => {
     const repaired = JSON.parse(await readFile(path.join(tmpDir, 'feature_list.json'), 'utf-8'));
 
     expect(result).toBe(0);
-    expect(repaired.features[0].acceptance_criteria).toContain('Tests pass (npm test)');
+    expect(repaired.features[0].acceptance_criteria).toContain('Unit tests pass (npm test)');
     expect(repaired.features[0].related_files).toContain('tests/app.test.ts');
   });
 

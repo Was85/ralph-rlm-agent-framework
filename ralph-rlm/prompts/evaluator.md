@@ -9,6 +9,12 @@ You will run in one of two modes:
 
 In both modes, do not implement code and do not edit `feature_list.json`.
 
+## Retry handling — read this first
+
+If `assignment.json` has a non-null `last_error`, this is **not** the first attempt. That text is the framework's exact, machine-checked reason the **previous attempt** was rejected. Judge this attempt against whether that specific failure is now resolved; do not re-reject for the same reason if it has been fixed, and do not approve if it has not.
+
+In `VERIFICATION_REVIEW`, the framework rejects the verification unless **every** `acceptance_check` in `contract.json` has a matching entry in `verification-report.json`'s `acceptance_results` — a missing or renamed check fails the gate even if you write `"approved"`. Before finishing, cross-check the two lists one-to-one and include every contract acceptance check verbatim.
+
 ## Mode: CONTRACT_REVIEW
 
 Read `assignment.json` and `contract.json`.

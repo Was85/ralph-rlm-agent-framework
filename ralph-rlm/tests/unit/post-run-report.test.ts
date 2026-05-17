@@ -36,12 +36,12 @@ describe('post-run-report', () => {
       expect(text).toContain('Build failed');
     });
 
-    it('lists in-progress features with warning', () => {
+    it('lists in-progress features under a clear (non-team) heading', () => {
       const data = createFeatureList({ inProgress: 1 });
       const lines = formatPostRunReport(data);
       const text = lines.join('\n');
       expect(text).toContain('IN-PROGRESS');
-      expect(text).toContain('crashed');
+      expect(text).toContain('stopped mid-feature');
     });
 
     it('omits sections when no features in that status', () => {
@@ -58,6 +58,22 @@ describe('post-run-report', () => {
       const lines = formatPostRunReport(data);
       const text = lines.join('\n');
       expect(text).toContain('POST-RUN REPORT');
+    });
+
+    it('shows the actionable last_error for in-progress features (not just blocked)', () => {
+      const data = createFeatureList({ inProgress: 1 });
+      const inProgress = data.features.find(f => f.status === 'in_progress')!;
+      inProgress.last_error =
+        'Verification report omitted required acceptance checks: Installer no longer ' +
+        'references the deleted Database project: Installer.wixproj has no .sqlproj ' +
+        'ProjectReference and Components.wxs has no dacpac File Source';
+
+      const text = formatPostRunReport(data).join('\n');
+
+      // The reason must be shown for in-progress, and not truncated so early
+      // that the actionable detail ("Installer.wixproj ...") is lost.
+      expect(text).toContain('omitted required acceptance checks');
+      expect(text).toContain('Installer.wixproj has no .sqlproj');
     });
   });
 });
